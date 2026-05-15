@@ -16,14 +16,17 @@ from app.agents.planner import planner_node
 from app.agents.researcher import researcher_node
 from app.agents.critic import critic_node
 from app.agents.writer import writer_node
+from app.core.logging import get_logger
 from app.services.cache import publish
+
+log = get_logger("orchestrator")
 
 
 def should_revise(state: AgentState) -> Literal["writer", "researcher"]:
     """Renvoie vers le Researcher si le Critic demande une révision et que le quota n'est pas atteint."""
-    if "REVISION_NEEDED" in state["critique"] and state["iteration"] < 2:
-        return "researcher"
-    return "writer"
+    decision = "researcher" if "REVISION_NEEDED" in state["critique"] and state["iteration"] < 2 else "writer"
+    log.info("routing", decision=decision, iteration=state["iteration"])
+    return decision
 
 
 def build_graph() -> StateGraph:
