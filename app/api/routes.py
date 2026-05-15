@@ -1,5 +1,6 @@
 """Endpoints REST de l'API — expose POST /api/v1/run et GET /api/v1/sessions/{id}/runs."""
 
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,10 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import run_workflow
+from app.core.logging import get_logger
 from app.db.models import Conversation, Run
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
+log = get_logger("api")
 
 
 class RunRequest(BaseModel):
@@ -55,9 +58,12 @@ async def run(
     db: AsyncSession = Depends(get_session),
 ) -> RunResponse:
     """Lance le pipeline multi-agents, persiste le run en base et retourne la réponse finale."""
+    t0 = time.perf_counter()
+    log.info("run_start", session_id=request.session_id, task=request.task[:80])
     try:
         state = await run_workflow(request.task, request.session_id)
     except Exception as exc:
+        log.error("run_failed", session_id=request.session_id, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
 
     # Récupère ou crée la conversation liée à la session
@@ -77,6 +83,7 @@ async def run(
         iterations=state["iteration"],
     ))
     await db.commit()
+    log.info("run_complete", session_id=request.session_id, iterations=state["iteration"], duration=round(time.perf_counter() - t0, 2))
 
     return RunResponse(
         session_id=request.session_id,

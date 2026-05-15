@@ -1,6 +1,7 @@
 # 🤖 Multi-Agent System
 
 <p align="center">
+  <img src="https://github.com/SeydinaBANE/multi-agent-system/actions/workflows/ci.yml/badge.svg" />
   <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/LangGraph-0.2-FF6B35" />

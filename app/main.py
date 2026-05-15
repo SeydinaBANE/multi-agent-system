@@ -7,13 +7,19 @@ from fastapi import FastAPI, WebSocket
 from app.api.documents import router as documents_router
 from app.api.routes import router
 from app.api.websocket import websocket_run
+from app.core.logging import configure_logging, get_logger
 from app.db.session import init_db
+
+log = get_logger("app")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     await init_db()
+    log.info("startup_complete")
     yield
+    log.info("shutdown")
 
 
 app = FastAPI(
