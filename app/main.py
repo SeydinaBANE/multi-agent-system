@@ -1,8 +1,10 @@
 """Point d'entrée FastAPI — déclare les routes REST, le WebSocket et le lifespan."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
+from fastapi.responses import FileResponse
 
 from app.api.documents import router as documents_router
 from app.api.routes import router
@@ -36,6 +38,12 @@ app.include_router(documents_router)
 async def ws_run(websocket: WebSocket) -> None:
     """Délègue la connexion WebSocket au handler dédié."""
     await websocket_run(websocket)
+
+
+@app.get("/", include_in_schema=False)
+async def frontend() -> FileResponse:
+    """Sert l'interface utilisateur."""
+    return FileResponse(Path(__file__).parent.parent / "frontend" / "index.html")
 
 
 @app.get("/health", tags=["infra"])

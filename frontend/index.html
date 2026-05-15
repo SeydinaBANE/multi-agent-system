@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Agent System</title>
+  <style>
+    :root {
+      --bg:           #0f1117;
+      --surface:      #1a1d27;
+      --surface2:     #21253a;
+      --border:       #2a2d3d;
+      --accent:       #6366f1;
+      --accent-dim:   rgba(99,102,241,.10);
+      --success:      #22c55e;
+      --success-dim:  rgba(34,197,94,.10);
+      --error:        #ef4444;
+      --text:         #e2e8f0;
+      --muted:        #64748b;
+      --radius:       8px;
+      --font:         'Inter', system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Header ─────────────────────────────────────── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; height: 52px; background: var(--surface);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .logo { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .conn { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background .3s; }
+    .dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+    /* ── Layout ─────────────────────────────────────── */
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Sidebar ─────────────────────────────────────── */
+    aside {
+      width: 256px; flex-shrink: 0; background: var(--surface);
+      border-right: 1px solid var(--border); display: flex;
+      flex-direction: column; overflow-y: auto;
+    }
+    .section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .section-title {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .1em; color: var(--muted); margin-bottom: 10px;
+    }
+
+    /* ── Controls ─────────────────────────────────────── */
+    .row { display: flex; gap: 6px; }
+    input, textarea {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-family: var(--font); font-size: 13px;
+      padding: 7px 10px; outline: none; transition: border-color .2s;
+    }
+    input:focus, textarea:focus { border-color: var(--accent); }
+    input { width: 100%; }
+    textarea { width: 100%; resize: vertical; min-height: 68px; }
+    btn, button {
+      background: var(--accent); border: none; border-radius: var(--radius);
+      color: #fff; cursor: pointer; font-family: var(--font);
+      font-size: 13px; font-weight: 500; padding: 7px 13px;
+      transition: opacity .2s; white-space: nowrap;
+    }
+    button:hover { opacity: .85; }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-ghost {
+      background: transparent; border: 1px solid var(--border); color: var(--text);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); opacity: 1; }
+    .feedback { font-size: 12px; margin-top: 6px; min-height: 14px; }
+    .feedback.ok  { color: var(--success); }
+    .feedback.err { color: var(--error); }
+
+    /* ── History ─────────────────────────────────────── */
+    .history { display: flex; flex-direction: column; gap: 5px; }
+    .h-item {
+      padding: 8px 10px; border-radius: var(--radius);
+      border: 1px solid var(--border); cursor: pointer;
+      transition: background .15s; font-size: 12px;
+    }
+    .h-item:hover { background: var(--surface2); }
+    .h-task { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+    .h-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .empty { font-size: 12px; color: var(--muted); }
+
+    /* ── Main ─────────────────────────────────────── */
+    main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Pipeline ─────────────────────────────────────── */
+    .pipeline {
+      display: flex; align-items: center; gap: 4px;
+      padding: 10px 20px; background: var(--surface);
+      border-bottom: 1px solid var(--border); overflow-x: auto; flex-shrink: 0;
+    }
+    .step {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border-radius: 20px;
+      border: 1px solid var(--border); font-size: 12px;
+      font-weight: 500; color: var(--muted); transition: all .25s; white-space: nowrap;
+    }
+    .step .pip { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .step.running { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .step.done    { border-color: var(--success); color: var(--success); background: var(--success-dim); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .step.running .pip { animation: pulse .9s infinite; }
+    .arrow { color: var(--border); font-size: 13px; user-select: none; }
+
+    /* ── Messages ─────────────────────────────────────── */
+    .messages { flex: 1; overflow-y: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 18px; }
+    .msg { display: flex; gap: 11px; }
+    .msg.user { flex-direction: row-reverse; align-self: flex-end; max-width: 72%; }
+    .msg.bot  { max-width: 78%; }
+    .av {
+      width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; background: var(--surface); border: 1px solid var(--border);
+    }
+    .msg.user .av { background: var(--accent); border-color: var(--accent); }
+    .bubble {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 11px 15px;
+      font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user .bubble { background: var(--accent); border-color: var(--accent); border-radius: 12px 4px 12px 12px; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .bubble.streaming::after { content:'▋'; animation: blink .75s infinite; margin-left:2px; color: var(--accent); }
+
+    .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; color: var(--muted); }
+    .welcome h2 { font-size: 20px; color: var(--text); }
+    .welcome p { font-size: 14px; max-width: 380px; line-height: 1.5; }
+
+    /* ── Input ─────────────────────────────────────── */
+    .input-bar {
+      display: flex; gap: 10px; align-items: flex-end;
+      padding: 14px 20px; background: var(--surface);
+      border-top: 1px solid var(--border); flex-shrink: 0;
+    }
+    .input-bar textarea { flex: 1; max-height: 110px; overflow-y: auto; resize: none; line-height: 1.5; min-height: 42px; }
+    .send { height: 42px; padding: 0 18px; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🤖 Multi-Agent System</div>
+  <div class="conn">
+    <div class="dot" id="dot"></div>
+    <span id="connLabel">Connexion…</span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────── -->
+  <aside>
+
+    <div class="section">
+      <div class="section-title">Session</div>
+      <div class="row">
+        <input id="sessionId" type="text" value="session-1" placeholder="session-id" />
+        <button class="btn-ghost" title="Charger l'historique" onclick="loadHistory()">📋</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Ingérer un document</div>
+      <textarea id="docText" placeholder="Colle ton texte ici…"></textarea>
+      <div class="row" style="margin-top:8px">
+        <input id="docId" type="text" placeholder="id (optionnel)" />
+        <button onclick="uploadDoc()">Indexer</button>
+      </div>
+      <div class="feedback" id="docFeedback"></div>
+    </div>
+
+    <div class="section" style="flex:1">
+      <div class="section-title">Historique <span id="histLabel" style="text-transform:none;letter-spacing:0;font-weight:400"></span></div>
+      <div class="history" id="historyList">
+        <div class="empty">Lance un run pour voir l'historique.</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────── -->
+  <main>
+
+    <div class="pipeline">
+      <div class="step" id="s-planner"><div class="pip"></div>Planner</div>
+      <div class="arrow">→</div>
+      <div class="step" id="s-researcher"><div class="pip"></div>Researcher</div>
+      <div class="arrow">→</div>
+      <div class="step" id="s-critic"><div class="pip"></div>Critic</div>
+      <div class="arrow">→</div>
+      <div class="step" id="s-writer"><div class="pip"></div>Writer</div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <h2>Bonjour 👋</h2>
+        <p>Pose une question — le pipeline va planifier, rechercher, évaluer et rédiger une réponse.</p>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <textarea id="taskInput" placeholder="Pose ta question… (Entrée pour envoyer, Shift+Entrée pour sauter une ligne)" rows="1" onkeydown="handleKey(event)"></textarea>
+      <button class="send" id="sendBtn" onclick="send()">Envoyer →</button>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const AGENTS = ['planner','researcher','critic','writer'];
+  let ws, currentBubble, busy = false;
+
+  // ── WebSocket ───────────────────────────────────────────────────────────────
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/run`);
+    ws.onopen  = () => setConn(true);
+    ws.onclose = () => { setConn(false); setTimeout(connect, 3000); };
+    ws.onerror = () => ws.close();
+    ws.onmessage = ({ data }) => handle(JSON.parse(data));
+  }
+
+  function handle({ type, agent, content, detail }) {
+    if      (type === 'agent_start') stepState(agent, 'running');
+    else if (type === 'agent_done')  stepState(agent, 'done');
+    else if (type === 'token')       appendToken(content);
+    else if (type === 'done')        { finishStream(); loadHistory(); }
+    else if (type === 'error')       { finishStream(true, detail); }
+  }
+
+  // ── Send ────────────────────────────────────────────────────────────────────
+
+  function send() {
+    const task = document.getElementById('taskInput').value.trim();
+    const sid  = sessionId();
+    if (!task || busy || !ws || ws.readyState !== 1) return;
+
+    hideWelcome();
+    addMsg(task, 'user');
+    resetPipeline();
+    currentBubble = addBubble();
+    busy = true;
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('taskInput').value = '';
+
+    ws.send(JSON.stringify({ task, session_id: sid }));
+  }
+
+  // ── Messages ────────────────────────────────────────────────────────────────
+
+  function addMsg(text, role) {
+    const d = el('div', `msg ${role}`);
+    d.innerHTML = `<div class="av">${role === 'user' ? '👤' : '🤖'}</div><div class="bubble">${esc(text)}</div>`;
+    msgs().appendChild(d);
+    scrollDown();
+  }
+
+  function addBubble() {
+    const d = el('div', 'msg bot');
+    d.innerHTML = `<div class="av">🤖</div><div class="bubble streaming" id="cb"></div>`;
+    msgs().appendChild(d);
+    scrollDown();
+    return document.getElementById('cb');
+  }
+
+  function appendToken(t) {
+    if (!currentBubble) return;
+    currentBubble.textContent += t;
+    scrollDown();
+  }
+
+  function finishStream(isErr = false, detail = '') {
+    if (currentBubble) {
+      currentBubble.classList.remove('streaming');
+      currentBubble.removeAttribute('id');
+      if (isErr) { currentBubble.style.color = 'var(--error)'; currentBubble.textContent = `Erreur : ${detail}`; }
+      currentBubble = null;
+    }
+    busy = false;
+    document.getElementById('sendBtn').disabled = false;
+  }
+
+  // ── Pipeline ────────────────────────────────────────────────────────────────
+
+  function resetPipeline() { AGENTS.forEach(a => { const s = document.getElementById(`s-${a}`); if(s) s.className='step'; }); }
+  function stepState(a, st) { const s = document.getElementById(`s-${a}`); if(s) s.className=`step ${st}`; }
+
+  // ── Document upload ─────────────────────────────────────────────────────────
+
+  async function uploadDoc() {
+    const text = document.getElementById('docText').value.trim();
+    const id   = document.getElementById('docId').value.trim();
+    const fb   = document.getElementById('docFeedback');
+    if (!text) return;
+    fb.textContent = 'Indexation…'; fb.className = 'feedback';
+    const body = { text }; if (id) body.id = id;
+    try {
+      const r = await fetch('/api/v1/documents', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const d = await r.json();
+      if (r.ok) {
+        fb.textContent = `✓ Indexé — id : ${d.id}`; fb.className = 'feedback ok';
+        document.getElementById('docText').value = '';
+        document.getElementById('docId').value   = '';
+      } else {
+        fb.textContent = `Erreur : ${d.detail}`; fb.className = 'feedback err';
+      }
+    } catch { fb.textContent = 'Erreur réseau'; fb.className = 'feedback err'; }
+  }
+
+  // ── History ─────────────────────────────────────────────────────────────────
+
+  async function loadHistory() {
+    const sid  = sessionId();
+    const list = document.getElementById('historyList');
+    document.getElementById('histLabel').textContent = `— ${sid}`;
+    try {
+      const r = await fetch(`/api/v1/sessions/${encodeURIComponent(sid)}/runs`);
+      if (!r.ok) { list.innerHTML = '<div class="empty">Aucun run pour cette session.</div>'; return; }
+      const data = await r.json();
+      if (!data.runs.length) { list.innerHTML = '<div class="empty">Aucun run.</div>'; return; }
+      list.innerHTML = '';
+      data.runs.forEach(run => {
+        const d = el('div', 'h-item');
+        d.dataset.task   = run.task;
+        d.dataset.answer = run.final_answer || '';
+        d.innerHTML = `<div class="h-task">${esc(run.task)}</div><div class="h-meta">${run.iterations} iter · ${fmt(run.created_at)}</div>`;
+        d.addEventListener('click', () => showRun(d.dataset.task, d.dataset.answer));
+        list.appendChild(d);
+      });
+    } catch { list.innerHTML = '<div class="empty">Erreur de chargement.</div>'; }
+  }
+
+  function showRun(task, answer) {
+    hideWelcome();
+    addMsg(task, 'user');
+    addMsg(answer, 'bot');
+  }
+
+  // ── Utils ───────────────────────────────────────────────────────────────────
+
+  const msgs      = () => document.getElementById('messages');
+  const sessionId = () => document.getElementById('sessionId').value.trim() || 'session-1';
+  const scrollDown= () => { const m = msgs(); m.scrollTop = m.scrollHeight; };
+  const hideWelcome=() => { const w = document.getElementById('welcome'); if (w) w.remove(); };
+  const el        = (tag, cls) => { const d = document.createElement(tag); d.className = cls; return d; };
+  const esc       = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmt       = iso => new Date(iso).toLocaleString('fr', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const setConn   = on  => { document.getElementById('dot').className = `dot${on?' on':''}`; document.getElementById('connLabel').textContent = on ? 'Connecté' : 'Déconnecté'; };
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  }
+
+  connect();
+</script>
+</body>
+</html>
