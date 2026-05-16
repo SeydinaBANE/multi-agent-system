@@ -22,14 +22,32 @@ pytest tests/test_agents/ -v
 pytest tests/test_agents/test_orchestrator.py::test_should_revise_when_revision_needed_and_under_limit -v
 
 # URLs
-# http://localhost:8000        — Interface web
+# http://localhost:3000        — Interface Next.js
+# http://localhost:8000        — API FastAPI (ancienne SPA + Swagger)
 # http://localhost:8000/docs   — Swagger interactif
 # http://localhost:8000/health — Health check
 ```
 
 ## Architecture
 
-Pipeline 4-agents orchestré par **LangGraph**, exposé via **FastAPI** (REST + WebSocket + Frontend).
+### Routage automatique chat / pipeline
+
+Chaque message passe d'abord par un **Router** (LLM rapide) qui décide :
+
+```
+Message utilisateur
+      ↓
+  🔀 Router (model_fast)
+      ├── "chat"     → stream_completion (model_smart) — réponse directe streamée
+      └── "pipeline" → planner → researcher → critic → writer
+```
+
+- **chat** : salutations, questions simples, explications rapides, calculs — réponse directe sans pipeline
+- **pipeline** : recherche approfondie, analyse, rapport, raisonnement multi-étapes
+
+L'événement `{"type": "mode", "mode": "chat"|"pipeline"}` est publié en premier sur Redis, le frontend grisce/affiche le pipeline en conséquence.
+
+### Pipeline 4-agents (mode pipeline uniquement)
 
 ```
 planner → researcher → critic ──(REVISION_NEEDED + iter < 2)──→ researcher
@@ -58,19 +76,33 @@ task, plan, research, critique, final_answer, iteration, messages
 ```
 Client WS → subscribe("run:{session_id}")
           → asyncio.create_task(stream_and_publish)
-                └→ stream_workflow → LangGraph astream_events v2
-                └→ publish("run:{session_id}", json_event)
+                └→ classify(task) → "chat" | "pipeline"
+                └→ publish({"type":"mode", "mode": ...})
+                ├── chat     → stream_completion → tokens → publish
+                └── pipeline → stream_workflow (LangGraph astream_events v2) → publish
           → pubsub.listen() → send_json au client
-          → reçoit {"type":"done"} → break
+          → reçoit {"type":"done", "final_answer": "...", "iterations": N}
+                └→ _persist_run() → PostgreSQL (Conversation + Run)
+                └→ break
 ```
 
-`_format_langgraph_event` dans `orchestrator.py` convertit les événements LangGraph bruts en `agent_start | token | agent_done | done | error`.
+Les runs WebSocket sont persistés en base via `_persist_run()` dans `websocket.py`.
+
+### Ingestion RAG — 4 sources
+
+| Endpoint | Source | Parsing |
+|---|---|---|
+| `POST /api/v1/documents` | Texte brut JSON | — |
+| `POST /api/v1/documents/batch` | Lot de textes JSON | — |
+| `POST /api/v1/documents/upload` | Fichier multipart | pdfplumber (PDF), python-docx (DOCX), UTF-8 (TXT) |
+| `POST /api/v1/documents/url` | URL JSON | httpx + BeautifulSoup + lxml |
 
 ### Services
 
 | Service | Rôle | Port |
 |---|---|---|
-| FastAPI (uvicorn) | REST + WebSocket + Frontend | 8000 |
+| Next.js 14 | Frontend (App Router + Tailwind + TypeScript) | 3000 |
+| FastAPI (uvicorn) | REST + WebSocket + ancienne SPA | 8000 |
 | PostgreSQL 16 | Persistance `conversations` + `runs` | 5432 |
 | Redis 7 | Pub/sub pour le streaming WebSocket | 6379 |
 | Qdrant | Mémoire vectorielle RAG (collection `research_memory`, dim 1536) | 6333 |
@@ -78,28 +110,38 @@ Client WS → subscribe("run:{session_id}")
 
 ### Key files
 
-- `frontend/index.html` — SPA (HTML/CSS/JS) — chat streaming, pipeline animé, ingestion RAG, historique
+- `frontend-next/src/app/page.tsx` — page principale Next.js (state, WS, routing mode)
+- `frontend-next/src/components/` — Pipeline, ChatArea, Sidebar, DocumentUpload
+- `app/agents/router.py` — `classify(task) -> "chat" | "pipeline"` via LLM rapide
 - `app/agents/state.py` — `AgentState` TypedDict
-- `app/agents/orchestrator.py` — graph LangGraph, `should_revise`, `stream_and_publish`, `_format_langgraph_event`
+- `app/agents/orchestrator.py` — `stream_and_publish`, `_stream_direct_chat`, `_stream_pipeline`
 - `app/api/routes.py` — `POST /api/v1/run`, `GET /api/v1/sessions/{id}/runs`
-- `app/api/documents.py` — `POST /api/v1/documents`, `POST /api/v1/documents/batch`
-- `app/api/websocket.py` — handler WebSocket, souscription Redis
-- `app/services/llm.py` — `chat_completion` + `embed` via OpenRouter
-- `app/services/vector_store.py` — `search` + `upsert` Qdrant
+- `app/api/documents.py` — ingestion texte + fichier + URL
+- `app/api/websocket.py` — handler WebSocket, `_persist_run`, souscription Redis
+- `app/services/llm.py` — `chat_completion` + `stream_completion` + `embed` via OpenRouter
+- `app/services/document_parser.py` — extraction texte PDF/DOCX/TXT/URL
+- `app/services/vector_store.py` — `search` (via `query_points`) + `upsert` Qdrant (qdrant-client >= 1.7)
 - `app/services/cache.py` — `publish` + `subscribe` Redis
 - `app/db/session.py` — engine async, `init_db()` (lifespan), `get_session` Depends
 - `app/core/config.py` — `Settings` pydantic-settings (`model_fast`, `model_default`, `model_smart`)
 - `app/core/logging.py` — structlog — logs structurés dans chaque agent et route
 - `alembic/versions/0001_initial_schema.py` — migration initiale (`conversations` + `runs`)
 
+### Alembic — note déploiement
+
+`alembic.ini` contient `prepend_sys_path = .` (requis pour que `from app.core.config import settings` fonctionne dans le conteneur Docker).
+
+Si la DB a été initialisée par `init_db()` avant la première migration, utiliser `alembic stamp head` pour synchroniser Alembic sans rejouer le DDL.
+
 ### Checkpointing
 
 `MemorySaver` en dev. Pour la prod, remplacer `_checkpointer` dans `orchestrator.py` par un checkpointer PostgreSQL.
 
-### Frontend
+### Frontend Next.js
 
-SPA single-file (`frontend/index.html`) servie par FastAPI via `FileResponse` à la route `/`.
-Pas de framework — HTML/CSS/JS vanilla. La connexion WebSocket est auto-reconnectée toutes les 3s si coupée.
+App Router (`src/app/`), composants client (`'use client'`), Tailwind CSS, TypeScript.
+Connexion WebSocket auto-reconnectée toutes les 3s. URL API configurée via `NEXT_PUBLIC_API_URL` (défaut : `http://localhost:8000`).
+En prod VPS : renseigner `VPS_IP` dans `.env` pour le build Docker du frontend.
 
 ### Tests
 

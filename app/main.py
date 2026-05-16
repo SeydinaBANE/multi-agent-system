@@ -4,13 +4,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.api.documents import router as documents_router
 from app.api.routes import router
 from app.api.websocket import websocket_run
+from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import init_db
+from app.services.cache import get_redis
 
 log = get_logger("app")
 
@@ -21,6 +24,8 @@ async def lifespan(app: FastAPI):
     await init_db()
     log.info("startup_complete")
     yield
+    r = await get_redis()
+    await r.aclose()
     log.info("shutdown")
 
 
@@ -28,6 +33,14 @@ app = FastAPI(
     title="Multi-Agent System",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(router)

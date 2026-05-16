@@ -1,13 +1,21 @@
 services:
   api:
-    # Pas de volume mount en prod — on utilise l'image buildée
     volumes: []
-    # Pas de --reload, 2 workers pour la prod
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     restart: unless-stopped
-    # Exposé publiquement sur le port 8000
     ports:
       - "0.0.0.0:8000:8000"
+
+  frontend:
+    restart: unless-stopped
+    build:
+      context: ./frontend-next
+      dockerfile: Dockerfile
+      args:
+        # En prod, remplacer par l'IP publique du VPS
+        NEXT_PUBLIC_API_URL: http://${VPS_IP:-localhost}:8000
+    ports:
+      - "0.0.0.0:3000:3000"
 
   postgres:
     restart: unless-stopped
