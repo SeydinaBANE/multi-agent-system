@@ -36,8 +36,8 @@ async def search(query: str, limit: int = 3) -> list[str]:
     await _ensure_collection()
     client = await _get()
     vector = await embed(query)
-    hits = await client.search(collection_name=COLLECTION, query_vector=vector, limit=limit)
-    return [h.payload.get("text", "") for h in hits]
+    result = await client.query_points(collection_name=COLLECTION, query=vector, limit=limit)
+    return [h.payload.get("text", "") for h in result.points]
 
 
 async def upsert(text: str, doc_id: str) -> None:
