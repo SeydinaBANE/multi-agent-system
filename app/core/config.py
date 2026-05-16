@@ -22,5 +22,10 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env"}
 
+    @property
+    def database_url_psycopg(self) -> str:
+        """URL PostgreSQL au format psycopg3 (sans +asyncpg) pour le checkpointer LangGraph."""
+        return self.database_url.replace("postgresql+asyncpg://", "postgresql://")
+
 
 settings = Settings()

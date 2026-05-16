@@ -7,6 +7,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from app.agents.orchestrator import close_checkpointer, setup_checkpointer
 from app.api.documents import router as documents_router
 from app.api.routes import router
 from app.api.websocket import websocket_run
@@ -22,8 +23,10 @@ log = get_logger("app")
 async def lifespan(app: FastAPI):
     configure_logging()
     await init_db()
+    await setup_checkpointer()
     log.info("startup_complete")
     yield
+    await close_checkpointer()
     r = await get_redis()
     await r.aclose()
     log.info("shutdown")

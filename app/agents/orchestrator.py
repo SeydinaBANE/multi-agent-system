@@ -9,7 +9,7 @@ import json
 from typing import Literal
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import MemorySaver  # fallback tests
 
 from app.agents.router import classify
 from app.agents.state import AgentState
@@ -56,12 +56,44 @@ def build_graph() -> StateGraph:
     return graph
 
 
-_checkpointer = MemorySaver()
+_checkpointer = MemorySaver()  # remplacé par AsyncPostgresSaver au démarrage
 _compiled_graph = None
+_pg_pool = None
+
+
+async def setup_checkpointer() -> None:
+    """Initialise le checkpointer PostgreSQL (appelé dans le lifespan FastAPI)."""
+    global _checkpointer, _compiled_graph, _pg_pool
+    try:
+        from psycopg_pool import AsyncConnectionPool
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+        _pg_pool = AsyncConnectionPool(
+            conninfo=settings.database_url_psycopg,
+            max_size=10,
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+            open=False,
+        )
+        await _pg_pool.open()
+        checkpointer = AsyncPostgresSaver(_pg_pool)
+        await checkpointer.setup()  # crée les tables de checkpointing si absentes
+        _checkpointer = checkpointer
+        _compiled_graph = None  # force la recompilation avec le nouveau checkpointer
+        log.info("checkpointer_postgres_ready")
+    except Exception as exc:
+        log.warning("checkpointer_postgres_failed", error=str(exc), fallback="MemorySaver")
+
+
+async def close_checkpointer() -> None:
+    """Ferme le pool de connexions PostgreSQL au shutdown."""
+    global _pg_pool
+    if _pg_pool is not None:
+        await _pg_pool.close()
+        _pg_pool = None
 
 
 def get_graph():
-    """Retourne le graph compilé (singleton) avec checkpointer MemorySaver."""
+    """Retourne le graph compilé (singleton)."""
     global _compiled_graph
     if _compiled_graph is None:
         _compiled_graph = build_graph().compile(checkpointer=_checkpointer)
