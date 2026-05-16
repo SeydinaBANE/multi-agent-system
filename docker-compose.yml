@@ -24,6 +24,18 @@ services:
       - .:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # ── Frontend Next.js ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend-next
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
   # ── PostgreSQL ─────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
