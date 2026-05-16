@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
+    qdrant_api_key: str | None = None  # requis pour Qdrant Cloud
 
     model_fast: str = "anthropic/claude-haiku-4-5"
     model_default: str = "anthropic/claude-haiku-4-5"

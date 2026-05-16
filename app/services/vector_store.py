@@ -18,10 +18,20 @@ _client: AsyncQdrantClient | None = None
 
 
 async def _get() -> AsyncQdrantClient:
-    """Retourne le client Qdrant (singleton lazy)."""
+    """Retourne le client Qdrant (singleton lazy).
+
+    Qdrant Cloud : définir QDRANT_API_KEY + QDRANT_HOST=xyz.cloud.qdrant.io
+    Local        : QDRANT_HOST=localhost (pas de clé requise)
+    """
     global _client
     if _client is None:
-        _client = AsyncQdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+        if settings.qdrant_api_key:
+            _client = AsyncQdrantClient(
+                url=f"https://{settings.qdrant_host}:{settings.qdrant_port}",
+                api_key=settings.qdrant_api_key,
+            )
+        else:
+            _client = AsyncQdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
     return _client
 
 
