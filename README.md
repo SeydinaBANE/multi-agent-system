@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/LangGraph-0.2-FF6B35" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
-  <img src="https://img.shields.io/badge/tests-46%20passed-4CAF50?logo=pytest&logoColor=white" />
+  <img src="https://img.shields.io/badge/tests-63%20passed-4CAF50?logo=pytest&logoColor=white" />
   <img src="https://img.shields.io/badge/license-MIT-blue" />
 </p>
 
@@ -51,6 +51,8 @@ graph LR
 | PostgreSQL 16 | Persistance conversations & runs | `5432` |
 | Redis 7 | Pub/sub streaming WebSocket | `6379` |
 | Qdrant | Mémoire vectorielle RAG | `6333` |
+| Adminer | Interface web PostgreSQL | `8080` |
+| RedisInsight | Interface web Redis | `5540` |
 | OpenRouter | Broker LLM (Claude Haiku 4.5) | external |
 
 ---
@@ -65,10 +67,12 @@ cp .env.example .env
 # 2. Lancer tous les services
 docker compose up -d
 
-# Interface  → http://localhost:3000
-# API        → http://localhost:8000
-# Swagger    → http://localhost:8000/docs
-# Health     → http://localhost:8000/health
+# Interface    → http://localhost:3000
+# API          → http://localhost:8000
+# Swagger      → http://localhost:8000/docs
+# Health       → http://localhost:8000/health
+# Adminer      → http://localhost:8080   (PostgreSQL GUI)
+# RedisInsight → http://localhost:5540   (Redis GUI)
 ```
 
 ---
@@ -173,12 +177,13 @@ tests/test_agents/test_critic.py        ....
 tests/test_agents/test_orchestrator.py  ........
 tests/test_agents/test_planner.py       ....
 tests/test_agents/test_researcher.py    ....
+tests/test_agents/test_router.py        .....
 tests/test_agents/test_writer.py        ....
-tests/test_api/test_documents.py        ......
+tests/test_api/test_documents.py        ...........
 tests/test_api/test_routes.py           .......
-tests/test_api/test_websocket.py        .........
+tests/test_api/test_websocket.py        ................
 
-46 passed in 0.16s
+63 passed in 15.54s
 ```
 
 ---
@@ -240,5 +245,5 @@ alembic/                  # Migrations versionnées
 | **Observabilité** | structlog dans chaque agent — modèle, durée, itérations |
 | **Migrations** | Alembic versionné — `make migrate` |
 | **Interface Next.js** | App Router, Tailwind, TypeScript — pipeline animé, ingestion RAG, historique |
-| **CI** | GitHub Actions — 46 tests sur Python 3.11 & 3.12 à chaque push |
+| **CI** | GitHub Actions — 63 tests sur Python 3.11 & 3.12 à chaque push |
 | **Production-ready** | Docker Compose, health checks, Makefile, async partout |

@@ -59,14 +59,14 @@ planner → researcher → critic ──(REVISION_NEEDED + iter < 2)──→ re
 - **Critic** — évalue ; émet `REVISION_NEEDED:` ou `APPROVED:` (`model_fast`)
 - **Writer** — rédige la réponse finale (`model_smart`)
 
-La boucle est limitée à 2 itérations (`state["iteration"] < 2` dans `should_revise`).
+La boucle est limitée à 2 itérations (`state["iterations"] < 2` dans `should_revise`).
 
 ### AgentState
 
 Défini dans `app/agents/state.py` (séparé de l'orchestrateur pour éviter l'import circulaire) :
 
 ```python
-task, plan, research, critique, final_answer, iteration, messages
+task, plan, research, critique, final_answer, iterations, messages
 ```
 
 `messages` est `Annotated[list, operator.add]` — chaque agent appende, n'écrase jamais.
@@ -76,6 +76,7 @@ task, plan, research, critique, final_answer, iteration, messages
 ```
 Client WS → subscribe("run:{session_id}")
           → asyncio.create_task(stream_and_publish)
+                └→ enregistré dans app.state.background_tasks (graceful shutdown)
                 └→ classify(task) → "chat" | "pipeline"
                 └→ publish({"type":"mode", "mode": ...})
                 ├── chat     → stream_completion → tokens → publish
@@ -86,7 +87,7 @@ Client WS → subscribe("run:{session_id}")
                 └→ break
 ```
 
-Les runs WebSocket sont persistés en base via `_persist_run()` dans `websocket.py`.
+Les tâches WebSocket sont trackées dans `app.state.background_tasks` — le lifespan les attend au shutdown pour garantir que `_persist_run()` se termine même si le client se déconnecte.
 
 ### Ingestion RAG — 4 sources
 
@@ -102,10 +103,12 @@ Les runs WebSocket sont persistés en base via `_persist_run()` dans `websocket.
 | Service | Rôle | Port |
 |---|---|---|
 | Next.js 14 | Frontend (App Router + Tailwind + TypeScript) | 3000 |
-| FastAPI (uvicorn) | REST + WebSocket + ancienne SPA | 8000 |
+| FastAPI (uvicorn) | REST + WebSocket | 8000 |
 | PostgreSQL 16 | Persistance `conversations` + `runs` | 5432 |
 | Redis 7 | Pub/sub pour le streaming WebSocket | 6379 |
 | Qdrant | Mémoire vectorielle RAG (collection `research_memory`, dim 1536) | 6333 |
+| Adminer | Interface web PostgreSQL | 8080 |
+| RedisInsight | Interface web Redis | 5540 |
 | OpenRouter | Broker LLM — modèle par défaut : `anthropic/claude-haiku-4-5` | external |
 
 ### Key files
