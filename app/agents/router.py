@@ -24,8 +24,9 @@ async def classify(task: str) -> Literal["chat", "pipeline"]:
             model=settings.model_fast,
             messages=[{"role": "user", "content": _PROMPT.format(task=task)}],
         )
-        mode: Literal["chat", "pipeline"] = "pipeline" if "pipeline" in result.lower() else "chat"
+        first_word = result.strip().split()[0].lower() if result.strip() else ""
+        mode = "pipeline" if first_word.startswith("pipeline") else "chat"
     except Exception:
-        mode = "pipeline"  # fallback sûr : le pipeline peut tout gérer
+        mode = "chat"  # fallback vers chat — plus rapide, moins coûteux
     log.info("router_decision", mode=mode, task=task[:60])
     return mode

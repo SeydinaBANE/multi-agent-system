@@ -56,6 +56,10 @@ export default function DocumentUpload({ apiBase }: { apiBase: string }) {
 
   async function submitFile() {
     if (!file) return
+    if (file.size > 50 * 1024 * 1024) {
+      setStatus({ msg: 'Fichier trop volumineux (max 50 MB).', ok: false })
+      return
+    }
     setLoading(true); setStatus(null)
     const form = new FormData()
     form.append('file', file)
@@ -76,6 +80,10 @@ export default function DocumentUpload({ apiBase }: { apiBase: string }) {
 
   async function submitUrl() {
     if (!url.trim()) return
+    try { new URL(url.trim()) } catch {
+      setStatus({ msg: "URL invalide. Exemple : https://example.com/article", ok: false })
+      return
+    }
     setLoading(true); setStatus(null)
     try {
       const body: Record<string, string> = { url: url.trim() }

@@ -84,6 +84,7 @@ export default function Home() {
   }, [])
 
   const connect = useCallback(() => {
+    wsRef.current?.close()  // ferme l'ancien WS avant d'en créer un nouveau
     const ws = new WebSocket(`${WS_BASE}/ws/run`)
     ws.onopen  = () => setConnected(true)
     ws.onclose = () => {
@@ -101,7 +102,7 @@ export default function Home() {
       clearTimeout(reconnectRef.current)
       wsRef.current?.close()
     }
-  }, [connect])
+  }, [])  // [] — connexion unique au montage, la reconnexion est gérée par onclose
 
   // ── Send ───────────────────────────────────────────────────────────────────
 
@@ -155,9 +156,20 @@ export default function Home() {
         <div className="flex items-center gap-2 text-[15px] font-semibold">
           🤖 Multi-Agent System
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span className={`w-[7px] h-[7px] rounded-full transition-colors duration-300 ${connected ? 'bg-success shadow-[0_0_6px_#22c55e]' : 'bg-muted'}`} />
-          {connected ? 'Connecté' : 'Déconnecté'}
+        <div className="flex items-center gap-3 text-xs text-muted">
+          {(busy || messages.length > 0) && (
+            <span className={`px-2 py-0.5 rounded-full border font-medium transition-colors ${
+              pipelineMode
+                ? 'border-accent/40 text-accent bg-accent/10'
+                : 'border-success/40 text-success bg-success/10'
+            }`}>
+              {pipelineMode ? '🔄 Pipeline' : '💬 Chat'}
+            </span>
+          )}
+          <div className="flex items-center gap-1.5">
+            <span className={`w-[7px] h-[7px] rounded-full transition-colors duration-300 ${connected ? 'bg-success shadow-[0_0_6px_#22c55e]' : 'bg-muted'}`} />
+            {connected ? 'Connecté' : 'Déconnecté'}
+          </div>
         </div>
       </header>
 
@@ -173,7 +185,7 @@ export default function Home() {
         />
         <main className="flex flex-col flex-1 overflow-hidden">
           <Pipeline pipeline={pipeline} visible={pipelineMode} />
-          <ChatArea messages={messages} busy={busy} onSend={send} />
+          <ChatArea messages={messages} busy={busy} connected={connected} onSend={send} />
         </main>
       </div>
     </div>

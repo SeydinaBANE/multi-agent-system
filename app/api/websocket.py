@@ -4,30 +4,9 @@ import asyncio
 import json
 
 from fastapi import WebSocket, WebSocketDisconnect
-from sqlalchemy import select
 
 from app.agents.orchestrator import stream_and_publish
-from app.db.models import Conversation, Run
-from app.db.session import AsyncSessionLocal
 from app.services.cache import subscribe
-
-
-async def _persist_run(session_id: str, task: str, final_answer: str, iterations: int) -> None:
-    """Sauvegarde le run en base après un workflow WebSocket."""
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Conversation).where(Conversation.session_id == session_id))
-        conversation = result.scalar_one_or_none()
-        if conversation is None:
-            conversation = Conversation(session_id=session_id)
-            db.add(conversation)
-            await db.flush()
-        db.add(Run(
-            conversation_id=conversation.id,
-            task=task,
-            final_answer=final_answer,
-            iterations=iterations,
-        ))
-        await db.commit()
 
 
 async def websocket_run(websocket: WebSocket) -> None:
@@ -35,12 +14,20 @@ async def websocket_run(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         data = await websocket.receive_json()
-        task: str = data["task"]
-        session_id: str = data["session_id"]
-        channel = f"run:{session_id}"
+        task: str | None = data.get("task")
+        session_id: str | None = data.get("session_id")
 
+        if not task or not task.strip():
+            await websocket.send_json({"type": "error", "detail": "Le champ 'task' est requis."})
+            return
+        if not session_id:
+            await websocket.send_json({"type": "error", "detail": "Le champ 'session_id' est requis."})
+            return
+
+        channel = f"run:{session_id}"
         pubsub = await subscribe(channel)
-        # Lance le workflow en arrière-plan — il publie ses événements sur Redis
+
+        # Lance le workflow en arrière-plan — persiste lui-même le run à la fin
         workflow_task = asyncio.create_task(stream_and_publish(task, session_id))
 
         try:
@@ -49,22 +36,18 @@ async def websocket_run(websocket: WebSocket) -> None:
                     continue
                 payload = json.loads(message["data"])
                 await websocket.send_json(payload)
-                if payload.get("type") == "done":
-                    if "final_answer" in payload:
-                        await _persist_run(
-                            session_id=session_id,
-                            task=task,
-                            final_answer=payload["final_answer"],
-                            iterations=payload.get("iterations", 0),
-                        )
-                    break
-                if payload.get("type") == "error":
+                if payload.get("type") in ("done", "error"):
                     break
         finally:
-            workflow_task.cancel()
+            # Ne pas annuler workflow_task : il continue de s'exécuter et persiste le run
+            # même si le client se déconnecte avant de recevoir "done".
             await pubsub.unsubscribe(channel)
+            _ = workflow_task  # tâche en arrière-plan, gérée par l'event loop
 
     except WebSocketDisconnect:
         pass
     except Exception as exc:
-        await websocket.send_json({"type": "error", "detail": str(exc)})
+        try:
+            await websocket.send_json({"type": "error", "detail": str(exc)})
+        except Exception:
+            pass

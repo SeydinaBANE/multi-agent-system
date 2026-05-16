@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import io
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+
+_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "::1", "[::1]"}
 
 
 async def parse_pdf(content: bytes) -> str:
@@ -31,7 +34,12 @@ def parse_txt(content: bytes) -> str:
 
 
 async def parse_url(url: str) -> str:
-    async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Schéma non supporté : {parsed.scheme}. Utilise http ou https.")
+    if parsed.hostname in _BLOCKED_HOSTS:
+        raise ValueError(f"Accès refusé à l'hôte : {parsed.hostname}")
+    async with httpx.AsyncClient(follow_redirects=False, timeout=15) as client:
         response = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
         response.raise_for_status()
     soup = BeautifulSoup(response.text, "lxml")

@@ -11,6 +11,8 @@ from app.services.vector_store import upsert
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+
 ALLOWED_MIME: dict[str, str] = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -82,7 +84,17 @@ async def ingest_file(
             status_code=415,
             detail=f"Type non supporté : {content_type}. Acceptés : PDF, DOCX, TXT.",
         )
-    raw = await file.read()
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = file.file.read(65536)  # 64 KB par chunk
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > MAX_UPLOAD_SIZE:
+            raise HTTPException(413, "Fichier trop volumineux (max 50 MB).")
+        chunks.append(chunk)
+    raw = b"".join(chunks)
     try:
         if ext == "pdf":
             text = await parse_pdf(raw)

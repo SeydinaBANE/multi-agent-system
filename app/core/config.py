@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     model_default: str = "anthropic/claude-haiku-4-5"
     model_smart: str = "anthropic/claude-haiku-4-5"
 
+    # Origines CORS autorisées — surcharger via ALLOWED_ORIGINS en prod
+    allowed_origins: list[str] = ["http://localhost:3000"]
+
     model_config = {"env_file": ".env"}
 
 

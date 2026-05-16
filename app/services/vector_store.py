@@ -1,5 +1,7 @@
 """Client Qdrant asynchrone — recherche sémantique et persistance des embeddings."""
 
+import hashlib
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
@@ -45,7 +47,7 @@ async def upsert(text: str, doc_id: str) -> None:
     await _ensure_collection()
     client = await _get()
     vector = await embed(text)
-    point_id = abs(hash(doc_id)) % (2**63)
+    point_id = int(hashlib.sha256(doc_id.encode()).hexdigest(), 16) % (2**63)
     await client.upsert(
         collection_name=COLLECTION,
         points=[PointStruct(id=point_id, vector=vector, payload={"text": text})],

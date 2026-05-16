@@ -26,10 +26,12 @@ function MessageBubble({ msg }: { msg: Message }) {
 export default function ChatArea({
   messages,
   busy,
+  connected,
   onSend,
 }: {
   messages: Message[]
   busy: boolean
+  connected: boolean
   onSend: (task: string) => void
 }) {
   const [input, setInput] = useState('')
@@ -77,11 +79,11 @@ export default function ChatArea({
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKey}
-          disabled={busy}
+          disabled={busy || !connected}
         />
         <button
           onClick={submit}
-          disabled={busy || !input.trim()}
+          disabled={busy || !connected || !input.trim()}
           className="h-[42px] px-4 bg-accent text-white rounded-lg text-sm font-medium whitespace-nowrap transition-opacity hover:opacity-85 disabled:opacity-35 disabled:cursor-not-allowed"
         >
           {busy ? '…' : 'Envoyer →'}

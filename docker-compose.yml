@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ── Application ────────────────────────────────────────────────────────
   api:
@@ -68,7 +66,7 @@ services:
 
   # ── Qdrant ────────────────────────────────────────────────────────────
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.10.0
     ports:
       - "6333:6333"
       - "6334:6334"   # gRPC
