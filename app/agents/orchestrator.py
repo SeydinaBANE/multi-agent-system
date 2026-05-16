@@ -181,10 +181,42 @@ async def stream_and_publish(task: str, session_id: str) -> None:
         await _stream_pipeline(channel, task, session_id)
 
 
+async def _load_chat_history(session_id: str, limit: int = 10) -> list[dict]:
+    """Récupère les derniers tours de conversation depuis PostgreSQL."""
+    try:
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as db:
+            conv_result = await db.execute(
+                select(Conversation).where(Conversation.session_id == session_id)
+            )
+            conv = conv_result.scalar_one_or_none()
+            if conv is None:
+                return []
+            runs_result = await db.execute(
+                select(Run)
+                .where(Run.conversation_id == conv.id)
+                .order_by(Run.created_at.desc())
+                .limit(limit)
+            )
+            runs = list(reversed(runs_result.scalars().all()))
+            history: list[dict] = []
+            for run in runs:
+                if run.task:
+                    history.append({"role": "user", "content": run.task})
+                if run.final_answer:
+                    history.append({"role": "assistant", "content": run.final_answer})
+            return history
+    except Exception as exc:
+        log.warning("load_chat_history_failed", error=str(exc))
+        return []
+
+
 async def _stream_direct_chat(channel: str, task: str, session_id: str) -> None:
-    """Répond directement depuis le LLM sans passer par le pipeline."""
+    """Répond directement depuis le LLM en incluant l'historique de la session."""
+    history = await _load_chat_history(session_id)
     messages = [
         {"role": "system", "content": "Tu es un assistant IA utile et concis. Réponds directement."},
+        *history,
         {"role": "user", "content": task},
     ]
     final_answer = ""
