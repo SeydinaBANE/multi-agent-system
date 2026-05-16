@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.agents.orchestrator import close_checkpointer, setup_checkpointer
+from app.services.mcp_client import close_mcp, setup_mcp
 from app.api.documents import router as documents_router
 from app.api.routes import router
 from app.api.websocket import websocket_run
@@ -26,11 +27,13 @@ async def lifespan(app: FastAPI):
     configure_logging()
     await init_db()
     await setup_checkpointer()
+    setup_mcp()
     log.info("startup_complete")
     yield
     if app.state.background_tasks:
         await asyncio.gather(*app.state.background_tasks, return_exceptions=True)
     await close_checkpointer()
+    await close_mcp()
     r = await get_redis()
     await r.aclose()
     log.info("shutdown")

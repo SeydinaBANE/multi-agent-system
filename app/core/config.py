@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     """Paramètres de l'application lus depuis .env via pydantic-settings."""
 
     openrouter_api_key: str
+    brave_api_key: str | None = None  # optionnel — active Brave Search dans le Researcher
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/multiagent"
     redis_url: str = "redis://localhost:6379/0"
