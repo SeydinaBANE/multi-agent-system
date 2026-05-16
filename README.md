@@ -3,6 +3,7 @@
 <p align="center">
   <img src="https://github.com/SeydinaBANE/multi-agent-system/actions/workflows/ci.yml/badge.svg" />
   <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/LangGraph-0.2-FF6B35" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
@@ -11,8 +12,9 @@
 </p>
 
 <p align="center">
-  Pipeline multi-agents orchestré par <strong>LangGraph</strong>, exposé via <strong>FastAPI</strong>,<br/>
-  avec streaming WebSocket temps réel via <strong>Redis pub/sub</strong> et interface web intégrée.
+  Système multi-agents orchestré par <strong>LangGraph</strong>, avec routage automatique<br/>
+  <strong>chat direct</strong> ou <strong>pipeline complet</strong>, ingestion RAG multi-sources,<br/>
+  streaming WebSocket via <strong>Redis pub/sub</strong> et interface <strong>Next.js</strong>.
 </p>
 
 ---
@@ -21,11 +23,14 @@
 
 ```mermaid
 graph LR
-    U([Utilisateur]) -->|POST /run| API[FastAPI]
-    U -->|WebSocket /ws/run| WS[WebSocket]
+    U([Utilisateur]) -->|WebSocket /ws/run| WS[WebSocket]
+    U -->|POST /run| API[FastAPI]
 
-    API --> PL[🧠 Planner]
-    WS --> PL
+    WS --> RT[🔀 Router]
+    API --> RT
+
+    RT -->|chat| LLM[🤖 LLM direct]
+    RT -->|pipeline| PL[🧠 Planner]
 
     PL --> RE[🔍 Researcher]
     RE -->|RAG| QD[(Qdrant)]
@@ -34,12 +39,14 @@ graph LR
     CR -->|REVISION_NEEDED\niter < 2| RE
     CR -->|APPROVED| WR[✍️ Writer]
 
+    LLM -->|stream tokens| WS
     WR --> DB[(PostgreSQL)]
     WR -->|Redis pub/sub| WS
 ```
 
 | Service | Rôle | Port |
 |---|---|---|
+| Next.js 14 | Interface web (App Router + Tailwind) | `3000` |
 | FastAPI | REST + WebSocket | `8000` |
 | PostgreSQL 16 | Persistance conversations & runs | `5432` |
 | Redis 7 | Pub/sub streaming WebSocket | `6379` |
@@ -58,42 +65,67 @@ cp .env.example .env
 # 2. Lancer tous les services
 docker compose up -d
 
-# Interface  → http://localhost:8000
+# Interface  → http://localhost:3000
+# API        → http://localhost:8000
 # Swagger    → http://localhost:8000/docs
 # Health     → http://localhost:8000/health
 ```
 
 ---
 
-## Interface web
+## Routage automatique
 
-L'interface est accessible directement sur **http://localhost:8000** après `docker compose up -d`.
+Le système détecte automatiquement si la question nécessite le pipeline complet ou une réponse directe :
 
-| Zone | Fonctionnalité |
-|---|---|
-| **Pipeline** | 4 étapes animées — gris → bleu pulsant (en cours) → vert (terminé) |
-| **Chat** | Streaming token par token avec curseur clignotant |
-| **Sidebar — Session** | Changer de session, charger l'historique des runs |
-| **Sidebar — Ingestion** | Indexer un texte dans Qdrant (id auto-généré si omis) |
-| **Sidebar — Historique** | Tous les runs de la session, cliquables pour les rejouer |
+| Mode | Exemples | Flux |
+|---|---|---|
+| **Chat direct** | "Bonjour", "C'est quoi Python ?", "Fais une blague" | Router → LLM → réponse streamée |
+| **Pipeline** | "Analyse le RAG vs fine-tuning", "Rédige un rapport sur…" | Router → Planner → Researcher → Critic → Writer |
+
+Le pipeline se grisce automatiquement en mode chat — aucune action de l'utilisateur requise.
 
 ---
 
-## Endpoints
+## Interface web
 
-### Ingérer des documents dans le RAG
+Accessible sur **http://localhost:3000** — Next.js 14, App Router, Tailwind CSS, TypeScript.
+
+| Zone | Fonctionnalité |
+|---|---|
+| **Pipeline** | 4 étapes animées — grisées en chat direct, animées en pipeline |
+| **Chat** | Streaming token par token avec curseur clignotant |
+| **Sidebar — Session** | Changer de session, charger l'historique |
+| **Sidebar — Ingestion** | 3 onglets : Texte / Fichier (drag-and-drop PDF DOCX TXT) / URL |
+| **Sidebar — Historique** | Tous les runs de la session, cliquables |
+
+---
+
+## Ingestion RAG
 
 ```bash
-# Document unique (id auto-généré si omis)
+# Texte brut
 curl -X POST http://localhost:8000/api/v1/documents \
   -H "Content-Type: application/json" \
   -d '{"text": "Le RAG combine recherche vectorielle et génération LLM.", "id": "doc-1"}'
+
+# Fichier PDF / DOCX / TXT
+curl -X POST http://localhost:8000/api/v1/documents/upload \
+  -F "file=@rapport.pdf"
+
+# Page web
+curl -X POST http://localhost:8000/api/v1/documents/url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/article"}'
 
 # Lot de documents
 curl -X POST http://localhost:8000/api/v1/documents/batch \
   -H "Content-Type: application/json" \
   -d '{"documents": [{"text": "...", "id": "doc-2"}, {"text": "...", "id": "doc-3"}]}'
 ```
+
+---
+
+## Endpoints
 
 ### Lancer un workflow (mode batch)
 
@@ -116,12 +148,13 @@ const ws = new WebSocket("ws://localhost:8000/ws/run");
 
 ws.onopen = () => ws.send(JSON.stringify({
   task: "Analyse les tendances IA en 2025",
-  session_id: "session-2"
+  session_id: "session-1"
 }));
 
 ws.onmessage = ({ data }) => {
-  const { type, agent, content, final_answer, iterations } = JSON.parse(data);
-  // type: "agent_start" | "token" | "agent_done" | "done" | "error"
+  const { type, mode, agent, content, final_answer } = JSON.parse(data);
+  // type: "mode" | "agent_start" | "token" | "agent_done" | "done" | "error"
+  // mode (dans l'event "mode") : "chat" | "pipeline"
   // "done" inclut final_answer et iterations
 };
 ```
@@ -153,23 +186,34 @@ tests/test_api/test_websocket.py        .........
 ## Structure
 
 ```
-frontend/
-└── index.html            # SPA — chat streaming, pipeline visuel, historique
+frontend-next/                # Interface Next.js 14
+└── src/
+    ├── app/
+    │   ├── layout.tsx        # Layout racine
+    │   ├── page.tsx          # Page principale (state, WebSocket, routing)
+    │   └── globals.css
+    └── components/
+        ├── Pipeline.tsx      # 4 étapes animées
+        ├── ChatArea.tsx      # Messages + streaming
+        ├── Sidebar.tsx       # Session, ingestion, historique
+        └── DocumentUpload.tsx# Onglets Texte / Fichier / URL
 app/
 ├── agents/
+│   ├── router.py         # Classifie : "chat" ou "pipeline"
 │   ├── state.py          # AgentState TypedDict partagé
-│   ├── orchestrator.py   # Graph LangGraph + stream_and_publish
+│   ├── orchestrator.py   # stream_and_publish, _stream_direct_chat, _stream_pipeline
 │   ├── planner.py        # Décompose la tâche
 │   ├── researcher.py     # RAG + LLM
 │   ├── critic.py         # Évalue, déclenche révisions
 │   └── writer.py         # Rédige la réponse finale
 ├── api/
 │   ├── routes.py         # POST /run · GET /sessions/{id}/runs
-│   ├── documents.py      # POST /documents · POST /documents/batch
-│   └── websocket.py      # Streaming via Redis pub/sub
+│   ├── documents.py      # POST /documents · /batch · /upload · /url
+│   └── websocket.py      # Streaming via Redis pub/sub + persistance
 ├── services/
-│   ├── llm.py            # Wrapper OpenRouter (chat + embed)
-│   ├── vector_store.py   # Client Qdrant
+│   ├── llm.py            # chat_completion + stream_completion + embed
+│   ├── document_parser.py# PDF (pdfplumber) · DOCX · TXT · URL (bs4)
+│   ├── vector_store.py   # Client Qdrant (query_points)
 │   └── cache.py          # Client Redis pub/sub
 ├── db/
 │   ├── models.py         # Conversation · Run (SQLAlchemy 2.0)
@@ -177,7 +221,7 @@ app/
 └── core/
     ├── config.py         # pydantic-settings
     └── logging.py        # structlog — logs structurés
-alembic/                  # Migrations versionnées (prepend_sys_path = . dans alembic.ini)
+alembic/                  # Migrations versionnées
 ```
 
 ---
@@ -186,14 +230,15 @@ alembic/                  # Migrations versionnées (prepend_sys_path = . dans a
 
 | | Détail |
 |---|---|
+| **Routage automatique** | Router LLM distingue chat direct et pipeline — zéro friction utilisateur |
 | **Feedback loop** | Le Critic renvoie au Researcher jusqu'à 2× si la recherche est insuffisante |
 | **Streaming découplé** | Redis pub/sub — N clients peuvent s'abonner au même run simultanément |
 | **Persistance universelle** | Runs persistés en base que ce soit via REST ou WebSocket |
-| **RAG opérationnel** | Qdrant + embeddings OpenRouter + endpoint d'ingestion unitaire & batch |
-| **Routing LLM** | Modèle cheap (Planner/Critic) vs smart (Writer) — optimisation des coûts |
+| **RAG multi-sources** | Qdrant + ingestion texte, PDF, DOCX, TXT, URL avec extraction automatique |
+| **Routing LLM** | Modèle cheap (Planner/Critic/Router) vs smart (Writer/Chat) — optimisation des coûts |
 | **Checkpointing** | LangGraph mémorise l'état par `session_id` entre les requêtes |
 | **Observabilité** | structlog dans chaque agent — modèle, durée, itérations |
 | **Migrations** | Alembic versionné — `make migrate` |
-| **Interface web** | SPA dark — streaming token, pipeline animé, ingestion RAG, historique |
+| **Interface Next.js** | App Router, Tailwind, TypeScript — pipeline animé, ingestion RAG, historique |
 | **CI** | GitHub Actions — 46 tests sur Python 3.11 & 3.12 à chaque push |
 | **Production-ready** | Docker Compose, health checks, Makefile, async partout |
