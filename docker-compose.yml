@@ -20,7 +20,9 @@ services:
         condition: service_started
     volumes:
       - .:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: >
+      sh -c "pip install -q --no-cache-dir -r requirements.txt &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # ── Frontend Next.js ───────────────────────────────────────────────────────
   frontend:
