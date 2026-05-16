@@ -33,12 +33,13 @@ const INITIAL_PIPELINE: Record<AgentName, PipelineStatus> = {
 function uid() { return Math.random().toString(36).slice(2) }
 
 export default function Home() {
-  const [sessionId,  setSessionId]  = useState('session-1')
-  const [messages,   setMessages]   = useState<Message[]>([])
-  const [pipeline,   setPipeline]   = useState(INITIAL_PIPELINE)
-  const [connected,  setConnected]  = useState(false)
-  const [busy,       setBusy]       = useState(false)
-  const [history,    setHistory]    = useState<Run[]>([])
+  const [sessionId,    setSessionId]    = useState('session-1')
+  const [messages,     setMessages]     = useState<Message[]>([])
+  const [pipeline,     setPipeline]     = useState(INITIAL_PIPELINE)
+  const [pipelineMode, setPipelineMode] = useState(true)   // false = chat direct
+  const [connected,    setConnected]    = useState(false)
+  const [busy,         setBusy]         = useState(false)
+  const [history,      setHistory]      = useState<Run[]>([])
 
   const wsRef        = useRef<WebSocket | null>(null)
   const streamingId  = useRef<string | null>(null)
@@ -49,8 +50,13 @@ export default function Home() {
   // ── WebSocket ──────────────────────────────────────────────────────────────
 
   const handleWsMessage = useCallback((raw: string) => {
-    const { type, agent, content, detail } = JSON.parse(raw)
+    const payload = JSON.parse(raw) as Record<string, string>
+    const { type, agent, content, detail, mode } = payload
 
+    if (type === 'mode') {
+      setPipelineMode(mode === 'pipeline')
+      return
+    }
     if (type === 'agent_start') {
       setPipeline(p => ({ ...p, [agent as AgentName]: 'running' }))
     } else if (type === 'agent_done') {
@@ -107,6 +113,7 @@ export default function Home() {
     streamingId.current = botId
     setBusy(true)
     setPipeline(INITIAL_PIPELINE)
+    setPipelineMode(true)
 
     setMessages(prev => [
       ...prev,
@@ -165,7 +172,7 @@ export default function Home() {
           apiBase={API_BASE}
         />
         <main className="flex flex-col flex-1 overflow-hidden">
-          <Pipeline pipeline={pipeline} />
+          <Pipeline pipeline={pipeline} visible={pipelineMode} />
           <ChatArea messages={messages} busy={busy} onSend={send} />
         </main>
       </div>

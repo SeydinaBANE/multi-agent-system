@@ -11,13 +11,16 @@ from typing import Literal
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
+from app.agents.router import classify
 from app.agents.state import AgentState
 from app.agents.planner import planner_node
 from app.agents.researcher import researcher_node
 from app.agents.critic import critic_node
 from app.agents.writer import writer_node
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.cache import publish
+from app.services.llm import stream_completion
 
 log = get_logger("orchestrator")
 
@@ -111,8 +114,36 @@ def _format_langgraph_event(event: dict) -> dict | None:
 
 
 async def stream_and_publish(task: str, session_id: str) -> None:
-    """Exécute le workflow et publie chaque événement formaté sur le canal Redis de la session."""
+    """Classifie la requête et publie soit un chat direct soit le pipeline complet."""
     channel = f"run:{session_id}"
+    mode = await classify(task)
+    await publish(channel, json.dumps({"type": "mode", "mode": mode}))
+
+    if mode == "chat":
+        await _stream_direct_chat(channel, task)
+    else:
+        await _stream_pipeline(channel, task, session_id)
+
+
+async def _stream_direct_chat(channel: str, task: str) -> None:
+    """Répond directement depuis le LLM sans passer par le pipeline."""
+    messages = [
+        {"role": "system", "content": "Tu es un assistant IA utile et concis. Réponds directement."},
+        {"role": "user", "content": task},
+    ]
+    final_answer = ""
+    try:
+        async for token in stream_completion(settings.model_smart, messages):
+            final_answer += token
+            await publish(channel, json.dumps({"type": "token", "content": token}))
+    except Exception as exc:
+        await publish(channel, json.dumps({"type": "error", "detail": str(exc)}))
+        return
+    await publish(channel, json.dumps({"type": "done", "final_answer": final_answer, "iterations": 0}))
+
+
+async def _stream_pipeline(channel: str, task: str, session_id: str) -> None:
+    """Exécute le workflow LangGraph complet et publie les événements."""
     final_state: AgentState | None = None
     try:
         async for event in stream_workflow(task, session_id):
@@ -125,9 +156,9 @@ async def stream_and_publish(task: str, session_id: str) -> None:
                 await publish(channel, json.dumps(msg))
     except Exception as exc:
         await publish(channel, json.dumps({"type": "error", "detail": str(exc)}))
-    finally:
-        done: dict = {"type": "done"}
-        if final_state:
-            done["final_answer"] = final_state.get("final_answer", "")
-            done["iterations"] = final_state.get("iteration", 0)
-        await publish(channel, json.dumps(done))
+        return
+    done: dict = {"type": "done"}
+    if final_state:
+        done["final_answer"] = final_state.get("final_answer", "")
+        done["iterations"] = final_state.get("iteration", 0)
+    await publish(channel, json.dumps(done))

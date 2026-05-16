@@ -1,4 +1,8 @@
 """Wrapper asynchrone pour l'API OpenRouter (chat completion + embeddings)."""
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncGenerator
 
 import httpx
 from app.core.config import settings
@@ -24,6 +28,31 @@ async def chat_completion(model: str, messages: list[dict]) -> str:
         )
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
+
+
+async def stream_completion(model: str, messages: list[dict]) -> AsyncGenerator[str, None]:
+    """Générateur async — stream les tokens depuis OpenRouter (SSE)."""
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        async with client.stream(
+            "POST",
+            f"{_BASE_URL}/chat/completions",
+            headers=_headers(),
+            json={"model": model, "messages": messages, "stream": True},
+        ) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                    token = chunk["choices"][0]["delta"].get("content", "")
+                    if token:
+                        yield token
+                except (KeyError, json.JSONDecodeError):
+                    continue
 
 
 async def embed(text: str) -> list[float]:

@@ -13,9 +13,15 @@ function stepClass(status: PipelineStatus) {
   return 'border-border text-muted'
 }
 
-export default function Pipeline({ pipeline }: { pipeline: Record<AgentName, PipelineStatus> }) {
+export default function Pipeline({
+  pipeline,
+  visible,
+}: {
+  pipeline: Record<AgentName, PipelineStatus>
+  visible: boolean
+}) {
   return (
-    <div className="flex items-center gap-1 px-5 py-2.5 bg-surface border-b border-border overflow-x-auto flex-shrink-0">
+    <div className={`flex items-center gap-1 px-5 py-2.5 bg-surface border-b border-border overflow-x-auto flex-shrink-0 transition-opacity duration-300 ${visible ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
       {AGENTS.map((agent, i) => (
         <div key={agent.key} className="flex items-center gap-1">
           {i > 0 && <span className="text-border text-sm select-none">→</span>}
