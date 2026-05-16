@@ -17,7 +17,7 @@ make shell                    # bash dans le conteneur api
 
 # Tests (hors Docker)
 pip install -r requirements-dev.txt
-pytest                        # 63 tests
+pytest                        # 78 tests
 pytest tests/test_agents/ -v
 pytest tests/test_agents/test_orchestrator.py::test_should_revise_when_revision_needed_and_under_limit -v
 
@@ -55,7 +55,7 @@ planner → researcher → critic ──(REVISION_NEEDED + iter < 2)──→ re
 ```
 
 - **Planner** — décompose la tâche en étapes (`model_fast`)
-- **Researcher** — RAG (Qdrant) + LLM (`model_default`) ; intègre le feedback du Critic au 2e passage
+- **Researcher** — RAG (Qdrant) + outils MCP en parallèle + LLM (`model_default`) ; intègre le feedback du Critic au 2e passage
 - **Critic** — évalue ; émet `REVISION_NEEDED:` ou `APPROVED:` (`model_fast`)
 - **Writer** — rédige la réponse finale (`model_smart`)
 
@@ -125,6 +125,7 @@ Les tâches WebSocket sont trackées dans `app.state.background_tasks` — le li
 - `app/services/document_parser.py` — extraction texte PDF/DOCX/TXT/URL
 - `app/services/vector_store.py` — `search` (via `query_points`) + `upsert` Qdrant (qdrant-client >= 1.7)
 - `app/services/cache.py` — `publish` + `subscribe` Redis
+- `app/services/mcp_client.py` — `MCPTool` ABC + `MCPRegistry` + `BraveSearchTool` ; `setup_mcp()` / `close_mcp()` appelés au lifespan
 - `app/db/session.py` — engine async, `init_db()` (lifespan), `get_session` Depends
 - `app/core/config.py` — `Settings` pydantic-settings (`model_fast`, `model_default`, `model_smart`)
 - `app/core/logging.py` — structlog — logs structurés dans chaque agent et route
@@ -135,6 +136,16 @@ Les tâches WebSocket sont trackées dans `app.state.background_tasks` — le li
 `alembic.ini` contient `prepend_sys_path = .` (requis pour que `from app.core.config import settings` fonctionne dans le conteneur Docker).
 
 Si la DB a été initialisée par `init_db()` avant la première migration, utiliser `alembic stamp head` pour synchroniser Alembic sans rejouer le DDL.
+
+### MCP — Outils externes
+
+`MCPRegistry` dans `app/services/mcp_client.py` — registre extensible d'outils appelés en parallèle dans le Researcher.
+
+**Ajouter un outil :** créer une classe `MCPTool` + `registry.register(MonOutil())` dans `setup_mcp()`.
+
+**Brave Search :** activé si `BRAVE_API_KEY` est renseignée dans `.env` — ignoré sinon.
+
+**Garanties :** outil absent → ignoré au démarrage. Outil qui plante → `log.warning`, pipeline continue.
 
 ### Checkpointing
 
@@ -148,4 +159,4 @@ En prod VPS : renseigner `VPS_IP` dans `.env` pour le build Docker du frontend.
 
 ### Tests
 
-63 tests, 0 warning. Chaque agent est testé avec `chat_completion` mocké. Les endpoints API utilisent `app.dependency_overrides[get_session]` pour isoler la base. `stream_and_publish` est testé en mockant `stream_workflow` comme async generator. `_load_chat_history`, `_persist_run` et le fallback `setup_checkpointer` sont testés avec `AsyncSessionLocal` mocké. Le CI GitHub Actions lance les tests sur Python 3.11 et 3.12 à chaque push.
+78 tests, 0 warning. Chaque agent est testé avec `chat_completion` mocké. Les endpoints API utilisent `app.dependency_overrides[get_session]` pour isoler la base. `stream_and_publish` est testé en mockant `stream_workflow` comme async generator. `_load_chat_history`, `_persist_run` et le fallback `setup_checkpointer` sont testés avec `AsyncSessionLocal` mocké. `MCPRegistry`, `BraveSearchTool` et l'intégration Researcher/MCP sont testés dans `tests/test_services/test_mcp_client.py`. Le CI GitHub Actions lance les tests sur Python 3.11 et 3.12 à chaque push.

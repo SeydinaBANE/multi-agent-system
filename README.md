@@ -7,14 +7,15 @@
   <img src="https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/LangGraph-0.2-FF6B35" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
-  <img src="https://img.shields.io/badge/tests-63%20passed-4CAF50?logo=pytest&logoColor=white" />
+  <img src="https://img.shields.io/badge/tests-78%20passed-4CAF50?logo=pytest&logoColor=white" />
   <img src="https://img.shields.io/badge/license-MIT-blue" />
 </p>
 
 <p align="center">
   Système multi-agents orchestré par <strong>LangGraph</strong>, avec routage automatique<br/>
   <strong>chat direct</strong> ou <strong>pipeline complet</strong>, ingestion RAG multi-sources,<br/>
-  streaming WebSocket via <strong>Redis pub/sub</strong> et interface <strong>Next.js</strong>.
+  outils <strong>MCP</strong> extensibles (Brave Search), streaming WebSocket via <strong>Redis pub/sub</strong><br/>
+  et interface <strong>Next.js</strong>.
 </p>
 
 ---
@@ -34,6 +35,7 @@ graph LR
 
     PL --> RE[🔍 Researcher]
     RE -->|RAG| QD[(Qdrant)]
+    RE -->|MCP| BS[🌐 Brave Search]
     RE --> CR[⚖️ Critic]
 
     CR -->|REVISION_NEEDED\niter < 2| RE
@@ -84,7 +86,7 @@ Le système détecte automatiquement si la question nécessite le pipeline compl
 | Mode | Exemples | Flux |
 |---|---|---|
 | **Chat direct** | "Bonjour", "C'est quoi Python ?", "Fais une blague" | Router → LLM → réponse streamée |
-| **Pipeline** | "Analyse le RAG vs fine-tuning", "Rédige un rapport sur…" | Router → Planner → Researcher → Critic → Writer |
+| **Pipeline** | "Analyse le RAG vs fine-tuning", "Rédige un rapport sur…" | Router → Planner → Researcher (RAG + MCP) → Critic → Writer |
 
 Le pipeline se grisce automatiquement en mode chat — aucune action de l'utilisateur requise.
 
@@ -101,6 +103,47 @@ Accessible sur **http://localhost:3000** — Next.js 14, App Router, Tailwind CS
 | **Sidebar — Session** | Changer de session, charger l'historique |
 | **Sidebar — Ingestion** | 3 onglets : Texte / Fichier (drag-and-drop PDF DOCX TXT) / URL |
 | **Sidebar — Historique** | Tous les runs de la session, cliquables |
+
+---
+
+## MCP — Outils externes
+
+Le Researcher exécute **RAG Qdrant + tous les outils MCP en parallèle** et injecte les résultats dans le prompt.
+
+### Activer Brave Search
+
+1. Obtenir une clé gratuite sur [brave.com/search/api](https://brave.com/search/api/)
+2. Ajouter dans `.env` :
+
+```env
+BRAVE_API_KEY=bsv-votre-clé
+```
+
+Les résultats web apparaissent automatiquement dans le contexte du Researcher. Si la clé est absente, le système fonctionne normalement sans recherche web.
+
+### Ajouter un nouvel outil MCP
+
+```python
+# app/services/mcp_client.py
+
+class GitHubSearchTool(MCPTool):
+    @property
+    def name(self) -> str: return "github_search"
+
+    @property
+    def description(self) -> str: return "Recherche dans les dépôts GitHub"
+
+    def is_available(self) -> bool: return bool(settings.github_token)
+
+    async def run(self, query: str) -> str:
+        # ... appel API GitHub
+        return résultat
+
+# Dans setup_mcp() :
+registry.register(GitHubSearchTool())
+```
+
+**Garanties :** un outil qui plante → log warning, pipeline continue. Clé absente → outil ignoré.
 
 ---
 
@@ -173,17 +216,18 @@ pytest -v
 ```
 
 ```
-tests/test_agents/test_critic.py        ....
-tests/test_agents/test_orchestrator.py  ........
-tests/test_agents/test_planner.py       ....
-tests/test_agents/test_researcher.py    ....
-tests/test_agents/test_router.py        .....
-tests/test_agents/test_writer.py        ....
-tests/test_api/test_documents.py        ...........
-tests/test_api/test_routes.py           .......
-tests/test_api/test_websocket.py        ................
+tests/test_agents/test_critic.py            ....
+tests/test_agents/test_orchestrator.py      ........
+tests/test_agents/test_planner.py           ....
+tests/test_agents/test_researcher.py        ......
+tests/test_agents/test_router.py            .....
+tests/test_agents/test_writer.py            ....
+tests/test_api/test_documents.py            ...........
+tests/test_api/test_routes.py               .......
+tests/test_api/test_websocket.py            ................
+tests/test_services/test_mcp_client.py      .............
 
-63 passed in 15.54s
+78 passed in 15.55s
 ```
 
 ---
@@ -219,7 +263,8 @@ app/
 │   ├── llm.py            # chat_completion + stream_completion + embed
 │   ├── document_parser.py# PDF (pdfplumber) · DOCX · TXT · URL (bs4)
 │   ├── vector_store.py   # Client Qdrant (query_points)
-│   └── cache.py          # Client Redis pub/sub
+│   ├── cache.py          # Client Redis pub/sub
+│   └── mcp_client.py     # MCPTool ABC · MCPRegistry · BraveSearchTool
 ├── db/
 │   ├── models.py         # Conversation · Run (SQLAlchemy 2.0)
 │   └── session.py        # Engine async + get_session
@@ -241,9 +286,10 @@ alembic/                  # Migrations versionnées
 | **Persistance universelle** | Runs persistés en base que ce soit via REST ou WebSocket |
 | **RAG multi-sources** | Qdrant + ingestion texte, PDF, DOCX, TXT, URL avec extraction automatique |
 | **Routing LLM** | Modèle cheap (Planner/Critic/Router) vs smart (Writer/Chat) — optimisation des coûts |
+| **MCP extensible** | Brave Search activé par clé API — ajouter un outil = 1 classe + 1 ligne, jamais de rupture |
 | **Checkpointing** | LangGraph mémorise l'état par `session_id` entre les requêtes |
-| **Observabilité** | structlog dans chaque agent — modèle, durée, itérations |
+| **Observabilité** | structlog dans chaque agent — modèle, durée, itérations, outils MCP utilisés |
 | **Migrations** | Alembic versionné — `make migrate` |
 | **Interface Next.js** | App Router, Tailwind, TypeScript — pipeline animé, ingestion RAG, historique |
-| **CI** | GitHub Actions — 63 tests sur Python 3.11 & 3.12 à chaque push |
+| **CI** | GitHub Actions — 78 tests sur Python 3.11 & 3.12 à chaque push |
 | **Production-ready** | Docker Compose, health checks, Makefile, async partout |
