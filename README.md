@@ -2,10 +2,11 @@
 
 <p align="center">
   <img src="https://github.com/SeydinaBANE/multi-agent-system/actions/workflows/ci.yml/badge.svg" />
-  <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/LangGraph-0.2-FF6B35" />
+  <img src="https://img.shields.io/badge/MCP-Brave%20Search-orange?logo=brave&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
   <img src="https://img.shields.io/badge/tests-78%20passed-4CAF50?logo=pytest&logoColor=white" />
   <img src="https://img.shields.io/badge/license-MIT-blue" />
