@@ -19,7 +19,7 @@ def make_state(**overrides) -> AgentState:
         "research": [],
         "critique": "",
         "final_answer": "",
-        "iteration": 0,
+        "iterations": 0,
         "messages": [],
     }
     return {**base, **overrides}

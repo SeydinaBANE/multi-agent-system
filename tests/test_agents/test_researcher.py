@@ -27,9 +27,9 @@ async def test_researcher_increments_iteration(mock_llm, mock_search):
 
     mock_search.return_value = []
     mock_llm.return_value = "Réponse."
-    result = await researcher_node(make_state(iteration=0))
+    result = await researcher_node(make_state(iterations=0))
 
-    assert result["iteration"] == 1
+    assert result["iterations"] == 1
 
 
 @patch("app.agents.researcher.search", new_callable=AsyncMock)
@@ -39,7 +39,7 @@ async def test_researcher_includes_critique_on_second_pass(mock_llm, mock_search
 
     mock_search.return_value = []
     mock_llm.return_value = "Réponse enrichie."
-    state = make_state(critique="REVISION_NEEDED: ajoute des exemples concrets", iteration=1)
+    state = make_state(critique="REVISION_NEEDED: ajoute des exemples concrets", iterations=1)
 
     await researcher_node(state)
 

@@ -14,7 +14,7 @@ log = get_logger("researcher")
 async def researcher_node(state: AgentState) -> dict:
     """Enrichit research[] en combinant la mémoire vectorielle et le LLM."""
     t0 = time.perf_counter()
-    log.info("researcher_start", iteration=state["iteration"] + 1)
+    log.info("researcher_start", iterations=state["iterations"] + 1)
     rag_hits = await search(state["task"], limit=3)
     rag_block = "\n".join(rag_hits) if rag_hits else "Aucun contexte RAG disponible."
 
@@ -47,6 +47,6 @@ async def researcher_node(state: AgentState) -> dict:
     log.info("researcher_done", rag_hits=len(rag_hits), model=settings.model_default, duration=round(time.perf_counter() - t0, 2))
     return {
         "research": state["research"] + [response],
-        "iteration": state["iteration"] + 1,
+        "iterations": state["iterations"] + 1,
         "messages": [{"role": "researcher", "content": response}],
     }

@@ -21,7 +21,7 @@ def make_run(id=1, task="Explique le RAG", final_answer="Réponse.", iterations=
 async def test_run_returns_final_answer(mock_workflow, client):
     mock_workflow.return_value = make_state(
         final_answer="Le RAG combine retrieval et génération.",
-        iteration=1,
+        iterations=1,
     )
 
     response = await client.post("/api/v1/run", json={
@@ -57,7 +57,7 @@ async def test_run_missing_fields_returns_422(mock_workflow, client):
 
 @patch("app.api.routes.run_workflow", new_callable=AsyncMock)
 async def test_run_calls_workflow_with_correct_args(mock_workflow, client):
-    mock_workflow.return_value = make_state(final_answer="OK", iteration=0)
+    mock_workflow.return_value = make_state(final_answer="OK", iterations=0)
 
     await client.post("/api/v1/run", json={
         "task": "Ma tâche",

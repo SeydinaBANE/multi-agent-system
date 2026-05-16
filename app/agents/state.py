@@ -12,5 +12,5 @@ class AgentState(TypedDict):
     research: list[str]                            # résultats du Researcher
     critique: str                                  # feedback du Critic
     final_answer: str                              # réponse du Writer
-    iteration: int                                 # compteur de cycles
+    iterations: int                                # compteur de cycles
     messages: Annotated[list, operator.add]        # historique — append-only

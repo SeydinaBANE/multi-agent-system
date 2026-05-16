@@ -9,22 +9,22 @@ from tests.conftest import make_state
 # ── should_revise ──────────────────────────────────────────────────────────
 
 def test_should_revise_when_revision_needed_and_under_limit():
-    state = make_state(critique="REVISION_NEEDED: ajoute des sources", iteration=1)
+    state = make_state(critique="REVISION_NEEDED: ajoute des sources", iterations=1)
     assert should_revise(state) == "researcher"
 
 
 def test_should_go_to_writer_when_limit_reached():
-    state = make_state(critique="REVISION_NEEDED: encore insuffisant", iteration=2)
+    state = make_state(critique="REVISION_NEEDED: encore insuffisant", iterations=2)
     assert should_revise(state) == "writer"
 
 
 def test_should_go_to_writer_when_approved():
-    state = make_state(critique="APPROVED: recherche solide", iteration=1)
+    state = make_state(critique="APPROVED: recherche solide", iterations=1)
     assert should_revise(state) == "writer"
 
 
 def test_should_go_to_writer_when_no_critique():
-    state = make_state(critique="", iteration=0)
+    state = make_state(critique="", iterations=0)
     assert should_revise(state) == "writer"
 
 
@@ -43,7 +43,7 @@ def test_initial_state_has_empty_collections():
 
 
 def test_initial_state_iteration_zero():
-    assert _initial_state("t")["iteration"] == 0
+    assert _initial_state("t")["iterations"] == 0
 
 
 def test_initial_state_empty_strings():

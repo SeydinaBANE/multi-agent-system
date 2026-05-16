@@ -10,6 +10,7 @@ from typing import Literal
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver  # fallback tests
+from sqlalchemy import select
 
 from app.agents.router import classify
 from app.agents.state import AgentState
@@ -29,8 +30,8 @@ log = get_logger("orchestrator")
 
 def should_revise(state: AgentState) -> Literal["writer", "researcher"]:
     """Renvoie vers le Researcher si le Critic demande une révision et que le quota n'est pas atteint."""
-    decision = "researcher" if "REVISION_NEEDED" in state["critique"] and state["iteration"] < 2 else "writer"
-    log.info("routing", decision=decision, iteration=state["iteration"])
+    decision = "researcher" if "REVISION_NEEDED" in state["critique"] and state["iterations"] < 2 else "writer"
+    log.info("routing", decision=decision, iterations=state["iterations"])
     return decision
 
 
@@ -75,10 +76,11 @@ async def setup_checkpointer() -> None:
             open=False,
         )
         await _pg_pool.open()
+        log.debug("pg_pool_opened")
         checkpointer = AsyncPostgresSaver(_pg_pool)
         await checkpointer.setup()  # crée les tables de checkpointing si absentes
         _checkpointer = checkpointer
-        _compiled_graph = None  # force la recompilation avec le nouveau checkpointer
+        _compiled_graph = build_graph().compile(checkpointer=_checkpointer)
         log.info("checkpointer_postgres_ready")
     except Exception as exc:
         log.warning("checkpointer_postgres_failed", error=str(exc), fallback="MemorySaver")
@@ -108,7 +110,7 @@ def _initial_state(task: str) -> AgentState:
         "research": [],
         "critique": "",
         "final_answer": "",
-        "iteration": 0,
+        "iterations": 0,
         "messages": [],
     }
 
@@ -150,7 +152,6 @@ def _format_langgraph_event(event: dict) -> dict | None:
 async def _persist_run(session_id: str, task: str, final_answer: str, iterations: int) -> None:
     """Persiste le run en base — appelé côté serveur pour survivre aux déconnexions client."""
     try:
-        from sqlalchemy import select
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Conversation).where(Conversation.session_id == session_id))
             conversation = result.scalar_one_or_none()
@@ -181,10 +182,9 @@ async def stream_and_publish(task: str, session_id: str) -> None:
         await _stream_pipeline(channel, task, session_id)
 
 
-async def _load_chat_history(session_id: str, limit: int = 10) -> list[dict]:
+async def _load_chat_history(session_id: str, limit: int = 5) -> list[dict]:
     """Récupère les derniers tours de conversation depuis PostgreSQL."""
     try:
-        from sqlalchemy import select
         async with AsyncSessionLocal() as db:
             conv_result = await db.execute(
                 select(Conversation).where(Conversation.session_id == session_id)
@@ -204,7 +204,7 @@ async def _load_chat_history(session_id: str, limit: int = 10) -> list[dict]:
                 if run.task:
                     history.append({"role": "user", "content": run.task})
                 if run.final_answer:
-                    history.append({"role": "assistant", "content": run.final_answer})
+                    history.append({"role": "assistant", "content": run.final_answer[:500]})
             return history
     except Exception as exc:
         log.warning("load_chat_history_failed", error=str(exc))
@@ -238,7 +238,7 @@ async def _stream_pipeline(channel: str, task: str, session_id: str) -> None:
         async for event in stream_workflow(task, session_id):
             if event.get("event") == "on_chain_end":
                 output = event.get("data", {}).get("output", {})
-                if isinstance(output, dict) and "final_answer" in output and "iteration" in output:
+                if isinstance(output, dict) and "final_answer" in output and "iterations" in output:
                     final_state = output
             msg = _format_langgraph_event(event)
             if msg:
@@ -249,7 +249,7 @@ async def _stream_pipeline(channel: str, task: str, session_id: str) -> None:
     done: dict = {"type": "done"}
     if final_state:
         fa = final_state.get("final_answer", "")
-        iters = final_state.get("iteration", 0)
+        iters = final_state.get("iterations", 0)
         done["final_answer"] = fa
         done["iterations"] = iters
         await _persist_run(session_id, task, fa, iters)

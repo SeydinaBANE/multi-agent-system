@@ -29,6 +29,9 @@ async def websocket_run(websocket: WebSocket) -> None:
 
         # Lance le workflow en arrière-plan — persiste lui-même le run à la fin
         workflow_task = asyncio.create_task(stream_and_publish(task, session_id))
+        bg: set = websocket.app.state.background_tasks
+        bg.add(workflow_task)
+        workflow_task.add_done_callback(bg.discard)
 
         try:
             async for message in pubsub.listen():
@@ -39,10 +42,7 @@ async def websocket_run(websocket: WebSocket) -> None:
                 if payload.get("type") in ("done", "error"):
                     break
         finally:
-            # Ne pas annuler workflow_task : il continue de s'exécuter et persiste le run
-            # même si le client se déconnecte avant de recevoir "done".
             await pubsub.unsubscribe(channel)
-            _ = workflow_task  # tâche en arrière-plan, gérée par l'event loop
 
     except WebSocketDisconnect:
         pass

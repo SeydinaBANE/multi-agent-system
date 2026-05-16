@@ -26,7 +26,8 @@ async def classify(task: str) -> Literal["chat", "pipeline"]:
         )
         first_word = result.strip().split()[0].lower() if result.strip() else ""
         mode = "pipeline" if first_word.startswith("pipeline") else "chat"
-    except Exception:
+    except Exception as exc:
+        log.warning("router_failed", error=str(exc))
         mode = "chat"  # fallback vers chat — plus rapide, moins coûteux
     log.info("router_decision", mode=mode, task=task[:60])
     return mode

@@ -6,7 +6,10 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.services.llm import embed
+
+log = get_logger("vector_store")
 
 COLLECTION = "research_memory"
 VECTOR_SIZE = 1536  # text-embedding-3-small
@@ -35,20 +38,28 @@ async def _ensure_collection() -> None:
 
 async def search(query: str, limit: int = 3) -> list[str]:
     """Retourne les `limit` passages les plus proches sémantiquement de la requête."""
-    await _ensure_collection()
-    client = await _get()
-    vector = await embed(query)
-    result = await client.query_points(collection_name=COLLECTION, query=vector, limit=limit)
-    return [h.payload.get("text", "") for h in result.points]
+    try:
+        await _ensure_collection()
+        client = await _get()
+        vector = await embed(query)
+        result = await client.query_points(collection_name=COLLECTION, query=vector, limit=limit)
+        return [h.payload.get("text", "") for h in result.points]
+    except Exception as exc:
+        log.warning("qdrant_search_failed", error=str(exc))
+        return []
 
 
 async def upsert(text: str, doc_id: str) -> None:
     """Insère ou met à jour un document dans la collection par son identifiant."""
-    await _ensure_collection()
-    client = await _get()
-    vector = await embed(text)
-    point_id = int(hashlib.sha256(doc_id.encode()).hexdigest(), 16) % (2**63)
-    await client.upsert(
-        collection_name=COLLECTION,
-        points=[PointStruct(id=point_id, vector=vector, payload={"text": text})],
-    )
+    try:
+        await _ensure_collection()
+        client = await _get()
+        vector = await embed(text)
+        point_id = int(hashlib.sha256(doc_id.encode()).hexdigest(), 16) % (2**63)
+        await client.upsert(
+            collection_name=COLLECTION,
+            points=[PointStruct(id=point_id, vector=vector, payload={"text": text})],
+        )
+    except Exception as exc:
+        log.warning("qdrant_upsert_failed", doc_id=doc_id, error=str(exc))
+        raise

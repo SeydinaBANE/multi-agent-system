@@ -80,15 +80,15 @@ async def run(
         conversation_id=conversation.id,
         task=request.task,
         final_answer=state["final_answer"],
-        iterations=state["iteration"],
+        iterations=state["iterations"],
     ))
     await db.commit()
-    log.info("run_complete", session_id=request.session_id, iterations=state["iteration"], duration=round(time.perf_counter() - t0, 2))
+    log.info("run_complete", session_id=request.session_id, iterations=state["iterations"], duration=round(time.perf_counter() - t0, 2))
 
     return RunResponse(
         session_id=request.session_id,
         final_answer=state["final_answer"],
-        iterations=state["iteration"],
+        iterations=state["iterations"],
     )
 
 

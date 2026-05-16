@@ -101,7 +101,7 @@ async def ingest_file(
         elif ext == "docx":
             text = await parse_docx(raw)
         else:
-            text = parse_txt(raw)
+            text = await parse_txt(raw)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Erreur d'extraction : {exc}")
     if not text.strip():

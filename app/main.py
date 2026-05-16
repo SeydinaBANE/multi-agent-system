@@ -1,5 +1,6 @@
 """Point d'entrée FastAPI — déclare les routes REST, le WebSocket et le lifespan."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,11 +22,14 @@ log = get_logger("app")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.background_tasks: set = set()
     configure_logging()
     await init_db()
     await setup_checkpointer()
     log.info("startup_complete")
     yield
+    if app.state.background_tasks:
+        await asyncio.gather(*app.state.background_tasks, return_exceptions=True)
     await close_checkpointer()
     r = await get_redis()
     await r.aclose()

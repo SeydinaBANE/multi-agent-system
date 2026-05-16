@@ -17,7 +17,7 @@ make shell                    # bash dans le conteneur api
 
 # Tests (hors Docker)
 pip install -r requirements-dev.txt
-pytest                        # 46 tests
+pytest                        # 63 tests
 pytest tests/test_agents/ -v
 pytest tests/test_agents/test_orchestrator.py::test_should_revise_when_revision_needed_and_under_limit -v
 
@@ -135,7 +135,7 @@ Si la DB a été initialisée par `init_db()` avant la première migration, util
 
 ### Checkpointing
 
-`MemorySaver` en dev. Pour la prod, remplacer `_checkpointer` dans `orchestrator.py` par un checkpointer PostgreSQL.
+`AsyncPostgresSaver` (psycopg3 + `AsyncConnectionPool`) initialisé dans le lifespan FastAPI via `setup_checkpointer()`. Le graph est précompilé avec le bon checkpointer avant la première requête. Fallback automatique vers `MemorySaver` si psycopg3 est absent (tests unitaires).
 
 ### Frontend Next.js
 
@@ -145,4 +145,4 @@ En prod VPS : renseigner `VPS_IP` dans `.env` pour le build Docker du frontend.
 
 ### Tests
 
-46 tests, 0 warning. Chaque agent est testé avec `chat_completion` mocké. Les endpoints API utilisent `app.dependency_overrides[get_session]` pour isoler la base. `stream_and_publish` est testé en mockant `stream_workflow` comme async generator. Le CI GitHub Actions lance les tests sur Python 3.11 et 3.12 à chaque push.
+63 tests, 0 warning. Chaque agent est testé avec `chat_completion` mocké. Les endpoints API utilisent `app.dependency_overrides[get_session]` pour isoler la base. `stream_and_publish` est testé en mockant `stream_workflow` comme async generator. `_load_chat_history`, `_persist_run` et le fallback `setup_checkpointer` sont testés avec `AsyncSessionLocal` mocké. Le CI GitHub Actions lance les tests sur Python 3.11 et 3.12 à chaque push.

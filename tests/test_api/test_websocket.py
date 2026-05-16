@@ -1,6 +1,7 @@
 """Tests du publisher Redis et du formateur d'événements LangGraph."""
 
 import json
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -180,3 +181,97 @@ async def test_stream_and_publish_chat_persists_run(mock_stream, mock_classify, 
     await stream_and_publish("Question", "session-chat-3")
 
     mock_persist.assert_called_once_with("session-chat-3", "Question", "Réponse", 0)
+
+
+# ── _load_chat_history ────────────────────────────────────────────────────
+
+async def test_load_chat_history_unknown_session_returns_empty():
+    from app.agents.orchestrator import _load_chat_history
+
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_db.execute = AsyncMock(return_value=mock_result)
+
+    mock_session_ctx = MagicMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.agents.orchestrator.AsyncSessionLocal", return_value=mock_session_ctx):
+        history = await _load_chat_history("unknown-session")
+
+    assert history == []
+
+
+async def test_load_chat_history_returns_messages():
+    from app.agents.orchestrator import _load_chat_history
+
+    fake_conv = MagicMock()
+    fake_conv.id = 1
+
+    fake_run = MagicMock()
+    fake_run.task = "Bonjour"
+    fake_run.final_answer = "Salut !"
+
+    mock_db = AsyncMock()
+    conv_result = MagicMock()
+    conv_result.scalar_one_or_none.return_value = fake_conv
+    runs_result = MagicMock()
+    runs_result.scalars.return_value.all.return_value = [fake_run]
+    mock_db.execute = AsyncMock(side_effect=[conv_result, runs_result])
+
+    mock_session_ctx = MagicMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.agents.orchestrator.AsyncSessionLocal", return_value=mock_session_ctx):
+        history = await _load_chat_history("known-session")
+
+    assert history == [
+        {"role": "user", "content": "Bonjour"},
+        {"role": "assistant", "content": "Salut !"},
+    ]
+
+
+# ── _persist_run ──────────────────────────────────────────────────────────
+
+async def test_persist_run_creates_conversation_and_run():
+    from app.agents.orchestrator import _persist_run
+
+    mock_db = AsyncMock()
+    conv_result = MagicMock()
+    conv_result.scalar_one_or_none.return_value = None
+    mock_db.execute = AsyncMock(return_value=conv_result)
+    mock_db.flush = AsyncMock()
+    mock_db.commit = AsyncMock()
+    mock_db.add = MagicMock()
+
+    mock_session_ctx = MagicMock()
+    mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.agents.orchestrator.AsyncSessionLocal", return_value=mock_session_ctx):
+        await _persist_run("sess-1", "Tâche", "Réponse finale", 2)
+
+    assert mock_db.add.call_count == 2  # Conversation + Run
+    mock_db.commit.assert_called_once()
+
+
+# ── setup_checkpointer fallback ───────────────────────────────────────────
+
+async def test_setup_checkpointer_falls_back_to_memory_saver_on_error():
+    import app.agents.orchestrator as orch
+    from langgraph.checkpoint.memory import MemorySaver
+
+    original_checkpointer = orch._checkpointer
+    original_graph = orch._compiled_graph
+
+    broken_module = MagicMock()
+    broken_module.AsyncConnectionPool = MagicMock(side_effect=Exception("no psycopg"))
+
+    with patch.dict(sys.modules, {"psycopg_pool": broken_module}):
+        await orch.setup_checkpointer()
+
+    assert isinstance(orch._checkpointer, MemorySaver)
+    orch._checkpointer = original_checkpointer
+    orch._compiled_graph = original_graph

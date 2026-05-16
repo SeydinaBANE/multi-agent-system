@@ -2,6 +2,9 @@
 
 import redis.asyncio as aioredis
 from app.core.config import settings
+from app.core.logging import get_logger
+
+log = get_logger("cache")
 
 _redis: aioredis.Redis | None = None
 
@@ -16,13 +19,21 @@ async def get_redis() -> aioredis.Redis:
 
 async def publish(channel: str, message: str) -> None:
     """Publie un message JSON sur le canal Redis spécifié."""
-    r = await get_redis()
-    await r.publish(channel, message)
+    try:
+        r = await get_redis()
+        await r.publish(channel, message)
+    except Exception as exc:
+        log.warning("redis_publish_failed", channel=channel, error=str(exc))
+        raise
 
 
 async def subscribe(channel: str) -> aioredis.client.PubSub:
     """Crée et retourne un abonnement pub/sub sur le canal Redis spécifié."""
-    r = await get_redis()
-    pubsub = r.pubsub()
-    await pubsub.subscribe(channel)
-    return pubsub
+    try:
+        r = await get_redis()
+        pubsub = r.pubsub()
+        await pubsub.subscribe(channel)
+        return pubsub
+    except Exception as exc:
+        log.warning("redis_subscribe_failed", channel=channel, error=str(exc))
+        raise
