@@ -1,4 +1,4 @@
-.PHONY: up down logs test migrate shell lint
+.PHONY: up down logs test migrate shell lint prod
 
 up:
 	docker compose up -d
@@ -20,3 +20,6 @@ test:
 
 lint:
 	ruff check app/ tests/
+
+prod:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build

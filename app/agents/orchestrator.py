@@ -113,12 +113,21 @@ def _format_langgraph_event(event: dict) -> dict | None:
 async def stream_and_publish(task: str, session_id: str) -> None:
     """Exécute le workflow et publie chaque événement formaté sur le canal Redis de la session."""
     channel = f"run:{session_id}"
+    final_state: AgentState | None = None
     try:
         async for event in stream_workflow(task, session_id):
+            if event.get("event") == "on_chain_end":
+                output = event.get("data", {}).get("output", {})
+                if isinstance(output, dict) and "final_answer" in output and "iteration" in output:
+                    final_state = output
             msg = _format_langgraph_event(event)
             if msg:
                 await publish(channel, json.dumps(msg))
     except Exception as exc:
         await publish(channel, json.dumps({"type": "error", "detail": str(exc)}))
     finally:
-        await publish(channel, json.dumps({"type": "done"}))
+        done: dict = {"type": "done"}
+        if final_state:
+            done["final_answer"] = final_state.get("final_answer", "")
+            done["iterations"] = final_state.get("iteration", 0)
+        await publish(channel, json.dumps(done))

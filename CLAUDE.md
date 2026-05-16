@@ -8,23 +8,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Setup
 cp .env.example .env          # puis renseigner OPENROUTER_API_KEY
 
-# Lancer tous les services (hot-reload activé via volume mount)
-docker compose up -d
+# Services
+make up                       # docker compose up -d
+make down                     # docker compose down
+make logs                     # docker compose logs -f api
+make migrate                  # alembic upgrade head (dans le conteneur)
+make shell                    # bash dans le conteneur api
 
 # Tests (hors Docker)
 pip install -r requirements-dev.txt
-pytest                        # tous les tests
-pytest tests/test_agents/ -v  # un dossier précis
+pytest                        # 46 tests
+pytest tests/test_agents/ -v
 pytest tests/test_agents/test_orchestrator.py::test_should_revise_when_revision_needed_and_under_limit -v
 
-# API
-# http://localhost:8000/docs  — Swagger interactif
-# http://localhost:8000/health
+# URLs
+# http://localhost:8000        — Interface web
+# http://localhost:8000/docs   — Swagger interactif
+# http://localhost:8000/health — Health check
 ```
 
 ## Architecture
 
-Pipeline 4-agents orchestré par **LangGraph**, exposé via **FastAPI** (REST + WebSocket).
+Pipeline 4-agents orchestré par **LangGraph**, exposé via **FastAPI** (REST + WebSocket + Frontend).
 
 ```
 planner → researcher → critic ──(REVISION_NEEDED + iter < 2)──→ researcher
@@ -65,7 +70,7 @@ Client WS → subscribe("run:{session_id}")
 
 | Service | Rôle | Port |
 |---|---|---|
-| FastAPI (uvicorn) | REST + WebSocket | 8000 |
+| FastAPI (uvicorn) | REST + WebSocket + Frontend | 8000 |
 | PostgreSQL 16 | Persistance `conversations` + `runs` | 5432 |
 | Redis 7 | Pub/sub pour le streaming WebSocket | 6379 |
 | Qdrant | Mémoire vectorielle RAG (collection `research_memory`, dim 1536) | 6333 |
@@ -73,21 +78,29 @@ Client WS → subscribe("run:{session_id}")
 
 ### Key files
 
+- `frontend/index.html` — SPA (HTML/CSS/JS) — chat streaming, pipeline animé, ingestion RAG, historique
 - `app/agents/state.py` — `AgentState` TypedDict
-- `app/agents/orchestrator.py` — graph LangGraph, `should_revise`, `stream_and_publish`
+- `app/agents/orchestrator.py` — graph LangGraph, `should_revise`, `stream_and_publish`, `_format_langgraph_event`
 - `app/api/routes.py` — `POST /api/v1/run`, `GET /api/v1/sessions/{id}/runs`
 - `app/api/documents.py` — `POST /api/v1/documents`, `POST /api/v1/documents/batch`
 - `app/api/websocket.py` — handler WebSocket, souscription Redis
 - `app/services/llm.py` — `chat_completion` + `embed` via OpenRouter
 - `app/services/vector_store.py` — `search` + `upsert` Qdrant
 - `app/services/cache.py` — `publish` + `subscribe` Redis
-- `app/db/session.py` — engine async, `init_db()` (appelé au lifespan), `get_session` Depends
+- `app/db/session.py` — engine async, `init_db()` (lifespan), `get_session` Depends
 - `app/core/config.py` — `Settings` pydantic-settings (`model_fast`, `model_default`, `model_smart`)
+- `app/core/logging.py` — structlog — logs structurés dans chaque agent et route
+- `alembic/versions/0001_initial_schema.py` — migration initiale (`conversations` + `runs`)
 
 ### Checkpointing
 
 `MemorySaver` en dev. Pour la prod, remplacer `_checkpointer` dans `orchestrator.py` par un checkpointer PostgreSQL.
 
+### Frontend
+
+SPA single-file (`frontend/index.html`) servie par FastAPI via `FileResponse` à la route `/`.
+Pas de framework — HTML/CSS/JS vanilla. La connexion WebSocket est auto-reconnectée toutes les 3s si coupée.
+
 ### Tests
 
-46 tests, 0 warning. Chaque agent est testé avec `chat_completion` mocké. Les endpoints API utilisent `app.dependency_overrides[get_session]` pour isoler la base. `stream_and_publish` est testé en mockant `stream_workflow` comme async generator.
+46 tests, 0 warning. Chaque agent est testé avec `chat_completion` mocké. Les endpoints API utilisent `app.dependency_overrides[get_session]` pour isoler la base. `stream_and_publish` est testé en mockant `stream_workflow` comme async generator. Le CI GitHub Actions lance les tests sur Python 3.11 et 3.12 à chaque push.

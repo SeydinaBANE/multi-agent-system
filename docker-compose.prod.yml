@@ -1,0 +1,25 @@
+services:
+  api:
+    # Pas de volume mount en prod — on utilise l'image buildée
+    volumes: []
+    # Pas de --reload, 2 workers pour la prod
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    restart: unless-stopped
+    # Exposé publiquement sur le port 8000
+    ports:
+      - "0.0.0.0:8000:8000"
+
+  postgres:
+    restart: unless-stopped
+    # Ne pas exposer PostgreSQL publiquement
+    ports: []
+
+  redis:
+    restart: unless-stopped
+    # Ne pas exposer Redis publiquement
+    ports: []
+
+  qdrant:
+    restart: unless-stopped
+    # Ne pas exposer Qdrant publiquement
+    ports: []

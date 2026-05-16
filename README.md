@@ -12,7 +12,7 @@
 
 <p align="center">
   Pipeline multi-agents orchestré par <strong>LangGraph</strong>, exposé via <strong>FastAPI</strong>,<br/>
-  avec streaming WebSocket temps réel via <strong>Redis pub/sub</strong>.
+  avec streaming WebSocket temps réel via <strong>Redis pub/sub</strong> et interface web intégrée.
 </p>
 
 ---
@@ -58,9 +58,24 @@ cp .env.example .env
 # 2. Lancer tous les services
 docker compose up -d
 
-# API      → http://localhost:8000
-# Swagger  → http://localhost:8000/docs
+# Interface  → http://localhost:8000
+# Swagger    → http://localhost:8000/docs
+# Health     → http://localhost:8000/health
 ```
+
+---
+
+## Interface web
+
+L'interface est accessible directement sur **http://localhost:8000** après `docker compose up -d`.
+
+| Zone | Fonctionnalité |
+|---|---|
+| **Pipeline** | 4 étapes animées — gris → bleu pulsant (en cours) → vert (terminé) |
+| **Chat** | Streaming token par token avec curseur clignotant |
+| **Sidebar — Session** | Changer de session, charger l'historique des runs |
+| **Sidebar — Ingestion** | Indexer un texte dans Qdrant (id auto-généré si omis) |
+| **Sidebar — Historique** | Tous les runs de la session, cliquables pour les rejouer |
 
 ---
 
@@ -137,6 +152,8 @@ tests/test_api/test_websocket.py        .........
 ## Structure
 
 ```
+frontend/
+└── index.html            # SPA — chat streaming, pipeline visuel, historique
 app/
 ├── agents/
 │   ├── state.py          # AgentState TypedDict partagé
@@ -156,7 +173,10 @@ app/
 ├── db/
 │   ├── models.py         # Conversation · Run (SQLAlchemy 2.0)
 │   └── session.py        # Engine async + get_session
-└── core/config.py        # pydantic-settings
+└── core/
+    ├── config.py         # pydantic-settings
+    └── logging.py        # structlog — logs structurés
+alembic/                  # Migrations Qdrant versionnées
 ```
 
 ---
@@ -170,4 +190,8 @@ app/
 | **RAG opérationnel** | Qdrant + embeddings OpenRouter + endpoint d'ingestion unitaire & batch |
 | **Routing LLM** | Modèle cheap (Planner/Critic) vs smart (Writer) — optimisation des coûts |
 | **Checkpointing** | LangGraph mémorise l'état par `session_id` entre les requêtes |
-| **Production-ready** | Docker Compose, health checks, async partout, 46 tests |
+| **Observabilité** | structlog dans chaque agent — modèle, durée, itérations |
+| **Migrations** | Alembic versionné — `make migrate` |
+| **Interface web** | SPA dark — streaming token, pipeline animé, ingestion RAG, historique |
+| **CI** | GitHub Actions — 46 tests sur Python 3.11 & 3.12 à chaque push |
+| **Production-ready** | Docker Compose, health checks, Makefile, async partout |
