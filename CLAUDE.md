@@ -61,10 +61,16 @@ Client WS → subscribe("run:{session_id}")
                 └→ stream_workflow → LangGraph astream_events v2
                 └→ publish("run:{session_id}", json_event)
           → pubsub.listen() → send_json au client
-          → reçoit {"type":"done"} → break
+          → reçoit {"type":"done", "final_answer": "...", "iterations": N}
+                └→ _persist_run() → PostgreSQL (Conversation + Run)
+                └→ break
 ```
 
 `_format_langgraph_event` dans `orchestrator.py` convertit les événements LangGraph bruts en `agent_start | token | agent_done | done | error`.
+
+L'événement `done` inclut `final_answer` et `iterations` capturés depuis le premier `on_chain_end` dont l'output contient les deux champs — robuste quelle que soit la version LangGraph.
+
+Les runs WebSocket sont persistés en base via `_persist_run()` dans `websocket.py` (identique au comportement de `POST /api/v1/run`).
 
 ### Services
 
@@ -85,12 +91,18 @@ Client WS → subscribe("run:{session_id}")
 - `app/api/documents.py` — `POST /api/v1/documents`, `POST /api/v1/documents/batch`
 - `app/api/websocket.py` — handler WebSocket, souscription Redis
 - `app/services/llm.py` — `chat_completion` + `embed` via OpenRouter
-- `app/services/vector_store.py` — `search` + `upsert` Qdrant
+- `app/services/vector_store.py` — `search` (via `query_points`) + `upsert` Qdrant (qdrant-client >= 1.7)
 - `app/services/cache.py` — `publish` + `subscribe` Redis
 - `app/db/session.py` — engine async, `init_db()` (lifespan), `get_session` Depends
 - `app/core/config.py` — `Settings` pydantic-settings (`model_fast`, `model_default`, `model_smart`)
 - `app/core/logging.py` — structlog — logs structurés dans chaque agent et route
 - `alembic/versions/0001_initial_schema.py` — migration initiale (`conversations` + `runs`)
+
+### Alembic — note déploiement
+
+`alembic.ini` contient `prepend_sys_path = .` (requis pour que `from app.core.config import settings` fonctionne dans le conteneur Docker).
+
+Si la DB a été initialisée par `init_db()` avant la première migration, utiliser `alembic stamp head` pour synchroniser Alembic sans rejouer le DDL.
 
 ### Checkpointing
 

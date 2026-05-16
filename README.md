@@ -120,8 +120,9 @@ ws.onopen = () => ws.send(JSON.stringify({
 }));
 
 ws.onmessage = ({ data }) => {
-  const { type, agent, content } = JSON.parse(data);
+  const { type, agent, content, final_answer, iterations } = JSON.parse(data);
   // type: "agent_start" | "token" | "agent_done" | "done" | "error"
+  // "done" inclut final_answer et iterations
 };
 ```
 
@@ -176,7 +177,7 @@ app/
 └── core/
     ├── config.py         # pydantic-settings
     └── logging.py        # structlog — logs structurés
-alembic/                  # Migrations Qdrant versionnées
+alembic/                  # Migrations versionnées (prepend_sys_path = . dans alembic.ini)
 ```
 
 ---
@@ -187,6 +188,7 @@ alembic/                  # Migrations Qdrant versionnées
 |---|---|
 | **Feedback loop** | Le Critic renvoie au Researcher jusqu'à 2× si la recherche est insuffisante |
 | **Streaming découplé** | Redis pub/sub — N clients peuvent s'abonner au même run simultanément |
+| **Persistance universelle** | Runs persistés en base que ce soit via REST ou WebSocket |
 | **RAG opérationnel** | Qdrant + embeddings OpenRouter + endpoint d'ingestion unitaire & batch |
 | **Routing LLM** | Modèle cheap (Planner/Critic) vs smart (Writer) — optimisation des coûts |
 | **Checkpointing** | LangGraph mémorise l'état par `session_id` entre les requêtes |
