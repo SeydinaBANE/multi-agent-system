@@ -155,7 +155,36 @@ Si la DB a été initialisée par `init_db()` avant la première migration, util
 
 App Router (`src/app/`), composants client (`'use client'`), Tailwind CSS, TypeScript.
 Connexion WebSocket auto-reconnectée toutes les 3s. URL API configurée via `NEXT_PUBLIC_API_URL` (défaut : `http://localhost:8000`).
-En prod VPS : renseigner `VPS_IP` dans `.env` pour le build Docker du frontend.
+
+**Prod Vercel :** définir `NEXT_PUBLIC_API_URL=https://xxx.railway.app` dans le dashboard Vercel. Root Directory = `frontend-next`. Le remplacement `http → ws` dans `page.tsx` produit automatiquement `wss://` pour les connexions sécurisées.
+
+### Déploiement cloud (Railway + Vercel + Qdrant Cloud)
+
+| Composant | Service | Config |
+|---|---|---|
+| FastAPI + agents | Railway (Dockerfile auto-détecté) | `railway.toml` à la racine |
+| PostgreSQL | Railway addon | Variable `${{Postgres.DATABASE_URL}}` |
+| Redis | Railway addon | Variable `${{Redis.REDIS_URL}}` |
+| Qdrant | Qdrant Cloud (free tier) | `QDRANT_HOST` + `QDRANT_API_KEY` |
+| Next.js frontend | Vercel | `frontend-next/vercel.json` |
+
+**Variables Railway (backend) :**
+```
+OPENROUTER_API_KEY=...
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+QDRANT_HOST=xyz.cloud.qdrant.io
+QDRANT_PORT=6333
+QDRANT_API_KEY=...
+ALLOWED_ORIGINS=["https://ton-projet.vercel.app"]
+```
+
+**Variable Vercel (frontend) :**
+```
+NEXT_PUBLIC_API_URL=https://ton-backend.up.railway.app
+```
+
+Le Dockerfile lance `alembic upgrade head` avant uvicorn — les migrations sont automatiques au démarrage Railway.
 
 ### Tests
 

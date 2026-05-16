@@ -8,6 +8,9 @@
   <img src="https://img.shields.io/badge/LangGraph-0.2-FF6B35" />
   <img src="https://img.shields.io/badge/MCP-Brave%20Search-orange?logo=brave&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/Railway-Backend-0B0D0E?logo=railway&logoColor=white" />
+  <img src="https://img.shields.io/badge/Vercel-Frontend-000000?logo=vercel&logoColor=white" />
+  <img src="https://img.shields.io/badge/Qdrant-Cloud-DC244C?logo=qdrant&logoColor=white" />
   <img src="https://img.shields.io/badge/tests-78%20passed-4CAF50?logo=pytest&logoColor=white" />
   <img src="https://img.shields.io/badge/license-MIT-blue" />
 </p>
@@ -77,6 +80,29 @@ docker compose up -d
 # Adminer      → http://localhost:8080   (PostgreSQL GUI)
 # RedisInsight → http://localhost:5540   (Redis GUI)
 ```
+
+---
+
+## Déploiement cloud
+
+| Composant | Service | Gratuit |
+|---|---|---|
+| FastAPI + agents | **Railway** (Dockerfile) | $5 crédit/mois |
+| PostgreSQL + Redis | Railway addons | inclus |
+| Qdrant | **Qdrant Cloud** (free tier) | oui |
+| Next.js frontend | **Vercel** | oui |
+
+```
+Railway vars :
+  OPENROUTER_API_KEY, DATABASE_URL, REDIS_URL
+  QDRANT_HOST, QDRANT_API_KEY, ALLOWED_ORIGINS
+
+Vercel vars :
+  NEXT_PUBLIC_API_URL=https://xxx.up.railway.app
+  Root Directory = frontend-next
+```
+
+Le Dockerfile lance `alembic upgrade head` automatiquement au démarrage — aucune action manuelle.
 
 ---
 
@@ -293,4 +319,5 @@ alembic/                  # Migrations versionnées
 | **Migrations** | Alembic versionné — `make migrate` |
 | **Interface Next.js** | App Router, Tailwind, TypeScript — pipeline animé, ingestion RAG, historique |
 | **CI** | GitHub Actions — 78 tests sur Python 3.11 & 3.12 à chaque push |
+| **Déploiement cloud** | Railway (backend) + Vercel (frontend) + Qdrant Cloud — zéro VPS à gérer |
 | **Production-ready** | Docker Compose, health checks, Makefile, async partout |
