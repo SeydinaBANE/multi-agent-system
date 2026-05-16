@@ -24,6 +24,12 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env"}
 
+    def model_post_init(self, __context: object) -> None:
+        # Railway fournit postgresql:// — on normalise vers postgresql+asyncpg://
+        url = self.database_url
+        if url.startswith("postgresql://") or url.startswith("postgres://"):
+            object.__setattr__(self, "database_url", url.replace("://", "+asyncpg://", 1))
+
     @property
     def database_url_psycopg(self) -> str:
         """URL PostgreSQL au format psycopg3 (sans +asyncpg) pour le checkpointer LangGraph."""
