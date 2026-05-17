@@ -6,6 +6,7 @@ import json
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agents.orchestrator import stream_and_publish
+from app.core.config import settings
 from app.services.cache import subscribe
 
 
@@ -14,6 +15,13 @@ async def websocket_run(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         data = await websocket.receive_json()
+
+        # Auth — vérifier le token si API_KEY est définie
+        if settings.api_key and data.get("token") != settings.api_key:
+            await websocket.send_json({"type": "error", "detail": "Unauthorized"})
+            await websocket.close()
+            return
+
         task: str | None = data.get("task")
         session_id: str | None = data.get("session_id")
 
@@ -23,11 +31,13 @@ async def websocket_run(websocket: WebSocket) -> None:
         if not session_id:
             await websocket.send_json({"type": "error", "detail": "Le champ 'session_id' est requis."})
             return
+        if len(task) > 10_000:
+            await websocket.send_json({"type": "error", "detail": "La tâche est trop longue (max 10 000 chars)."})
+            return
 
         channel = f"run:{session_id}"
         pubsub = await subscribe(channel)
 
-        # Lance le workflow en arrière-plan — persiste lui-même le run à la fin
         workflow_task = asyncio.create_task(stream_and_publish(task, session_id))
         bg: set = websocket.app.state.background_tasks
         bg.add(workflow_task)
@@ -48,6 +58,6 @@ async def websocket_run(websocket: WebSocket) -> None:
         pass
     except Exception as exc:
         try:
-            await websocket.send_json({"type": "error", "detail": str(exc)})
+            await websocket.send_json({"type": "error", "detail": "Erreur interne"})
         except Exception:
             pass

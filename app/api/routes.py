@@ -3,12 +3,14 @@
 import time
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.orchestrator import run_workflow
+from app.api.auth import verify_api_key
+from app.core.limiter import limiter
 from app.core.logging import get_logger
 from app.db.models import Conversation, Run
 from app.db.session import get_session
@@ -20,8 +22,8 @@ log = get_logger("api")
 class RunRequest(BaseModel):
     """Corps de la requête POST /run."""
 
-    task: str
-    session_id: str
+    task: str = Field(..., min_length=1, max_length=10_000)
+    session_id: str = Field(..., min_length=1, max_length=255, pattern=r"^[a-zA-Z0-9_-]+$")
 
 
 class RunResponse(BaseModel):
@@ -53,40 +55,42 @@ class SessionHistory(BaseModel):
 
 
 @router.post("/run", response_model=RunResponse)
+@limiter.limit("20/minute")
 async def run(
-    request: RunRequest,
+    request: Request,
+    body: RunRequest,
     db: AsyncSession = Depends(get_session),
+    _: None = Depends(verify_api_key),
 ) -> RunResponse:
     """Lance le pipeline multi-agents, persiste le run en base et retourne la réponse finale."""
     t0 = time.perf_counter()
-    log.info("run_start", session_id=request.session_id, task=request.task[:80])
+    log.info("run_start", session_id=body.session_id, task=body.task[:80])
     try:
-        state = await run_workflow(request.task, request.session_id)
+        state = await run_workflow(body.task, body.session_id)
     except Exception as exc:
-        log.error("run_failed", session_id=request.session_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        log.error("run_failed", session_id=body.session_id, error=str(exc))
+        raise HTTPException(status_code=500, detail="Erreur interne")
 
-    # Récupère ou crée la conversation liée à la session
     result = await db.execute(
-        select(Conversation).where(Conversation.session_id == request.session_id)
+        select(Conversation).where(Conversation.session_id == body.session_id)
     )
     conversation = result.scalar_one_or_none()
     if conversation is None:
-        conversation = Conversation(session_id=request.session_id)
+        conversation = Conversation(session_id=body.session_id)
         db.add(conversation)
         await db.flush()
 
     db.add(Run(
         conversation_id=conversation.id,
-        task=request.task,
+        task=body.task,
         final_answer=state["final_answer"],
         iterations=state["iterations"],
     ))
     await db.commit()
-    log.info("run_complete", session_id=request.session_id, iterations=state["iterations"], duration=round(time.perf_counter() - t0, 2))
+    log.info("run_complete", session_id=body.session_id, iterations=state["iterations"], duration=round(time.perf_counter() - t0, 2))
 
     return RunResponse(
-        session_id=request.session_id,
+        session_id=body.session_id,
         final_answer=state["final_answer"],
         iterations=state["iterations"],
     )
@@ -96,6 +100,7 @@ async def run(
 async def get_session_runs(
     session_id: str,
     db: AsyncSession = Depends(get_session),
+    _: None = Depends(verify_api_key),
 ) -> SessionHistory:
     """Retourne l'historique de tous les runs d'une session, du plus récent au plus ancien."""
     result = await db.execute(

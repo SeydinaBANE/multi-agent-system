@@ -1,11 +1,12 @@
 """Endpoints d'ingestion RAG — texte brut, fichier (PDF/DOCX/TXT) et URL."""
-from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+from app.api.auth import verify_api_key
+from app.core.limiter import limiter
 from app.services.document_parser import parse_docx, parse_pdf, parse_txt, parse_url
 from app.services.vector_store import upsert
 
@@ -47,17 +48,27 @@ class UrlIn(BaseModel):
 
 
 @router.post("", response_model=DocumentOut, status_code=201)
-async def ingest_one(doc: DocumentIn) -> DocumentOut:
+@limiter.limit("30/minute")
+async def ingest_one(
+    request: Request,
+    doc: DocumentIn,
+    _: None = Depends(verify_api_key),
+) -> DocumentOut:
     """Indexe un document texte dans Qdrant."""
     try:
         await upsert(doc.text, doc.id)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Erreur interne")
     return DocumentOut(id=doc.id, indexed=True, chars=len(doc.text))
 
 
 @router.post("/batch", response_model=BatchOut, status_code=201)
-async def ingest_batch(body: BatchIn) -> BatchOut:
+@limiter.limit("10/minute")
+async def ingest_batch(
+    request: Request,
+    body: BatchIn,
+    _: None = Depends(verify_api_key),
+) -> BatchOut:
     """Indexe plusieurs documents en lot."""
     results: list[DocumentOut] = []
     failed = 0
@@ -72,9 +83,12 @@ async def ingest_batch(body: BatchIn) -> BatchOut:
 
 
 @router.post("/upload", response_model=DocumentOut, status_code=201)
+@limiter.limit("20/minute")
 async def ingest_file(
+    request: Request,
     file: UploadFile = File(...),
     doc_id: str | None = Form(default=None),
+    _: None = Depends(verify_api_key),
 ) -> DocumentOut:
     """Indexe un fichier PDF, DOCX ou TXT dans Qdrant."""
     content_type = (file.content_type or "").split(";")[0].strip()
@@ -87,7 +101,7 @@ async def ingest_file(
     chunks: list[bytes] = []
     size = 0
     while True:
-        chunk = file.file.read(65536)  # 64 KB par chunk
+        chunk = file.file.read(65536)
         if not chunk:
             break
         size += len(chunk)
@@ -102,30 +116,37 @@ async def ingest_file(
             text = await parse_docx(raw)
         else:
             text = await parse_txt(raw)
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Erreur d'extraction : {exc}")
+    except Exception:
+        raise HTTPException(status_code=422, detail="Erreur d'extraction du fichier.")
     if not text.strip():
         raise HTTPException(status_code=422, detail="Aucun texte extrait du fichier.")
     final_id = doc_id or str(uuid.uuid4())
     try:
         await upsert(text, final_id)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Erreur interne")
     return DocumentOut(id=final_id, indexed=True, chars=len(text))
 
 
 @router.post("/url", response_model=DocumentOut, status_code=201)
-async def ingest_url(body: UrlIn) -> DocumentOut:
+@limiter.limit("20/minute")
+async def ingest_url(
+    request: Request,
+    body: UrlIn,
+    _: None = Depends(verify_api_key),
+) -> DocumentOut:
     """Scrape une page web et l'indexe dans Qdrant."""
     try:
         text = await parse_url(body.url)
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Erreur de scraping : {exc}")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=422, detail="Erreur de scraping.")
     if not text.strip():
         raise HTTPException(status_code=422, detail="Aucun texte extrait de l'URL.")
     final_id = body.id or str(uuid.uuid4())
     try:
         await upsert(text, final_id)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Erreur interne")
     return DocumentOut(id=final_id, indexed=True, chars=len(text))

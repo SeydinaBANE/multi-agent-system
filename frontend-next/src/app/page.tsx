@@ -7,6 +7,7 @@ import Sidebar from '@/components/Sidebar'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 const WS_BASE  = API_BASE.replace(/^http/, 'ws')
+const API_KEY  = process.env.NEXT_PUBLIC_API_KEY ?? ''
 
 export type PipelineStatus = 'idle' | 'running' | 'done'
 export type AgentName = 'planner' | 'researcher' | 'critic' | 'writer'
@@ -122,14 +123,15 @@ export default function Home() {
       { id: botId, role: 'bot',  content: '',   streaming: true  },
     ])
 
-    ws.send(JSON.stringify({ task, session_id: sessionRef.current }))
+    ws.send(JSON.stringify({ task, session_id: sessionRef.current, token: API_KEY }))
   }, [busy])
 
   // ── History ────────────────────────────────────────────────────────────────
 
   const loadHistory = useCallback(async (sid: string) => {
     try {
-      const r = await fetch(`${API_BASE}/api/v1/sessions/${encodeURIComponent(sid)}/runs`)
+      const headers: Record<string, string> = API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}
+      const r = await fetch(`${API_BASE}/api/v1/sessions/${encodeURIComponent(sid)}/runs`, { headers })
       if (!r.ok) { setHistory([]); return }
       const data = await r.json()
       setHistory(data.runs ?? [])
@@ -152,23 +154,28 @@ export default function Home() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <header className="flex items-center justify-between px-5 h-[52px] bg-surface border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-2 text-[15px] font-semibold">
-          🤖 Multi-Agent System
+      <header className="flex items-center justify-between px-5 h-[56px] bg-surface border-b border-border flex-shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-base">
+            🤖
+          </div>
+          <span className="text-[15px] font-semibold text-text">Multi-Agent System</span>
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted">
+        <div className="flex items-center gap-3 text-xs">
           {(busy || messages.length > 0) && (
-            <span className={`px-2 py-0.5 rounded-full border font-medium transition-colors ${
+            <span className={`px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${
               pipelineMode
                 ? 'border-accent/40 text-accent bg-accent/10'
                 : 'border-success/40 text-success bg-success/10'
             }`}>
-              {pipelineMode ? '🔄 Pipeline' : '💬 Chat'}
+              {pipelineMode ? 'Pipeline' : 'Chat'}
             </span>
           )}
-          <div className="flex items-center gap-1.5">
-            <span className={`w-[7px] h-[7px] rounded-full transition-colors duration-300 ${connected ? 'bg-success shadow-[0_0_6px_#22c55e]' : 'bg-muted'}`} />
-            {connected ? 'Connecté' : 'Déconnecté'}
+          <div className="flex items-center gap-1.5 text-muted">
+            <span className={`w-2 h-2 rounded-full transition-all duration-300 ${
+              connected ? 'bg-success shadow-glow-success' : 'bg-muted'
+            }`} />
+            <span className="text-[11px]">{connected ? 'Connecté' : 'Déconnecté'}</span>
           </div>
         </div>
       </header>

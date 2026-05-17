@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import ipaddress
+import socket
 from urllib.parse import urlparse
 
 import httpx
@@ -11,7 +13,30 @@ from app.core.logging import get_logger
 
 log = get_logger("document_parser")
 
-_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "::1", "[::1]"}
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+
+def _is_safe_url(url: str) -> bool:
+    """Vérifie que l'URL pointe vers une IP publique (protection SSRF)."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    hostname = parsed.hostname or ""
+    try:
+        ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+        return not any(ip in net for net in _BLOCKED_NETWORKS)
+    except Exception:
+        return False
 
 
 async def parse_pdf(content: bytes) -> str:
@@ -49,7 +74,7 @@ async def parse_url(url: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Schéma non supporté : {parsed.scheme}. Utilise http ou https.")
-    if parsed.hostname in _BLOCKED_HOSTS:
+    if not _is_safe_url(url):
         raise ValueError(f"Accès refusé à l'hôte : {parsed.hostname}")
     try:
         async with httpx.AsyncClient(follow_redirects=False, timeout=15) as client:

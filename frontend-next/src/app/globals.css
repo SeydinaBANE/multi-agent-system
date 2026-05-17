@@ -4,6 +4,16 @@
 
 html, body { height: 100%; }
 
+/* Scrollbar */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e2538; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+
+/* Text selection */
+::selection { background: rgba(99,102,241,0.28); color: #e2e8f0; }
+
+/* Streaming cursor */
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }

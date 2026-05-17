@@ -46,7 +46,7 @@ async def test_run_returns_500_on_workflow_error(mock_workflow, client):
     })
 
     assert response.status_code == 500
-    assert "OpenRouter timeout" in response.json()["detail"]
+    assert response.json()["detail"] == "Erreur interne"
 
 
 @patch("app.api.routes.run_workflow", new_callable=AsyncMock)
