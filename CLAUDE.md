@@ -6,7 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Setup
-cp .env.example .env          # puis renseigner OPENROUTER_API_KEY
+cp .env.example .env          # puis renseigner OPENROUTER_API_KEY (+ API_KEY si auth souhaitée)
+# Frontend local avec auth :
+# echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > frontend-next/.env.local
+# echo "NEXT_PUBLIC_API_KEY=<même valeur que API_KEY>" >> frontend-next/.env.local
 
 # Services
 make up                       # docker compose up -d
@@ -111,6 +114,14 @@ Les tâches WebSocket sont trackées dans `app.state.background_tasks` — le li
 | RedisInsight | Interface web Redis | 5540 |
 | OpenRouter | Broker LLM — modèle par défaut : `anthropic/claude-haiku-4-5` | external |
 
+### Sécurité
+
+- **Auth Bearer** : `app/api/auth.py` — dependency `verify_api_key`, désactivée si `API_KEY` absente (dev-safe). Token WS vérifié dans le premier JSON reçu par `websocket.py`.
+- **Rate limiting** : `app/core/limiter.py` (slowapi) — 20/min `/run`, 30/min documents, 10/min batch, 20/min upload/url. Requires `request: Request` comme premier paramètre des routes décorées.
+- **SSRF** : `app/services/document_parser.py` — `_is_safe_url()` résout le hostname via `socket.gethostbyname` et vérifie l'IP contre `_BLOCKED_NETWORKS` (ipaddress).
+- **Inputs** : `RunRequest.task` max 10 000 chars, `session_id` max 255 chars + pattern `[a-zA-Z0-9_-]`. Erreurs internes masquées (`"Erreur interne"`).
+- **Note** : ne pas remettre `from __future__ import annotations` dans `app/api/documents.py` — incompatible avec slowapi + UploadFile (FastAPI ForwardRef error).
+
 ### Key files
 
 - `frontend-next/src/app/page.tsx` — page principale Next.js (state, WS, routing mode)
@@ -118,16 +129,18 @@ Les tâches WebSocket sont trackées dans `app.state.background_tasks` — le li
 - `app/agents/router.py` — `classify(task) -> "chat" | "pipeline"` via LLM rapide
 - `app/agents/state.py` — `AgentState` TypedDict
 - `app/agents/orchestrator.py` — `stream_and_publish`, `_stream_direct_chat`, `_stream_pipeline`
+- `app/api/auth.py` — dependency `verify_api_key` (Bearer token)
 - `app/api/routes.py` — `POST /api/v1/run`, `GET /api/v1/sessions/{id}/runs`
 - `app/api/documents.py` — ingestion texte + fichier + URL
 - `app/api/websocket.py` — handler WebSocket, `_persist_run`, souscription Redis
+- `app/core/limiter.py` — instance slowapi `Limiter` partagée
 - `app/services/llm.py` — `chat_completion` + `stream_completion` + `embed` via OpenRouter
 - `app/services/document_parser.py` — extraction texte PDF/DOCX/TXT/URL
 - `app/services/vector_store.py` — `search` (via `query_points`) + `upsert` Qdrant (qdrant-client >= 1.7)
 - `app/services/cache.py` — `publish` + `subscribe` Redis
 - `app/services/mcp_client.py` — `MCPTool` ABC + `MCPRegistry` + `BraveSearchTool` ; `setup_mcp()` / `close_mcp()` appelés au lifespan
 - `app/db/session.py` — engine async, `init_db()` (lifespan), `get_session` Depends
-- `app/core/config.py` — `Settings` pydantic-settings (`model_fast`, `model_default`, `model_smart`)
+- `app/core/config.py` — `Settings` pydantic-settings (`model_fast`, `model_default`, `model_smart`, `api_key`) + `model_post_init` normalise `postgresql://` → `postgresql+asyncpg://`
 - `app/core/logging.py` — structlog — logs structurés dans chaque agent et route
 - `alembic/versions/0001_initial_schema.py` — migration initiale (`conversations` + `runs`)
 
@@ -177,14 +190,28 @@ QDRANT_HOST=xyz.cloud.qdrant.io
 QDRANT_PORT=6333
 QDRANT_API_KEY=...
 ALLOWED_ORIGINS=["https://ton-projet.vercel.app"]
+API_KEY=<openssl rand -hex 32>
 ```
 
-**Variable Vercel (frontend) :**
+**Variables Vercel (frontend — définir AVANT le deploy, ce sont des build-time vars) :**
 ```
 NEXT_PUBLIC_API_URL=https://ton-backend.up.railway.app
+NEXT_PUBLIC_API_KEY=<même valeur que API_KEY>
+```
+
+**Frontend local avec auth :** créer `frontend-next/.env.local` :
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_KEY=ma-clé-locale
 ```
 
 Le Dockerfile lance `alembic upgrade head` avant uvicorn — les migrations sont automatiques au démarrage Railway.
+
+### Frontend Next.js — redesign
+
+Palette : `bg: #090c14`, `surface: #111827`, `surface2: #1c2133`, `border: #1e2538`, `accent: #6366f1`.
+Nouveaux tokens Tailwind : `shadow-glow-accent`, `shadow-glow-sm`, `shadow-glow-success`, animation `shimmer`.
+Scrollbar custom 4px dans `globals.css`. Pipeline avec icônes SVG par agent + shimmer sur running + ✓ sur done.
 
 ### Tests
 
