@@ -11,7 +11,7 @@ from app.adapters.checkpointer.postgres_checkpointer import CheckpointerAdapter
 from app.api.deps import get_container, get_workflow_service
 from app.application.workflow_service import WorkflowService
 from app.main import app
-from app.agents.state import AgentState
+from app.domain.state import AgentState
 from app.application.container import Container
 from app.domain.ports import RunRecord
 

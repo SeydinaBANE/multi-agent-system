@@ -28,6 +28,34 @@ def test_format_unknown_event_returns_none():
     assert msg is None
 
 
+# ── _initial_state ─────────────────────────────────────────────────────────
+
+def test_initial_state_sets_task():
+    service = _make_service()
+    state = service._initial_state("Ma tâche")
+    assert state["task"] == "Ma tâche"
+
+
+def test_initial_state_has_empty_collections():
+    service = _make_service()
+    state = service._initial_state("t")
+    assert state["plan"] == []
+    assert state["research"] == []
+    assert state["messages"] == []
+
+
+def test_initial_state_iteration_zero():
+    service = _make_service()
+    assert service._initial_state("t")["iterations"] == 0
+
+
+def test_initial_state_empty_strings():
+    service = _make_service()
+    state = service._initial_state("t")
+    assert state["critique"] == ""
+    assert state["final_answer"] == ""
+
+
 # ── run_workflow / graph intégration avec fakes ───────────────────────────
 
 async def test_run_workflow_returns_final_state():

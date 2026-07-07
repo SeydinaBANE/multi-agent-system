@@ -3,9 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-import pytest
 
-from app.services.mcp_client import BraveSearchTool, MCPRegistry, MCPTool, setup_mcp, get_registry
+from app.adapters.mcp.registry import BraveSearchTool, MCPRegistry, MCPTool, build_mcp_registry
 
 
 # ── MCPTool (outil fictif pour les tests) ─────────────────────────────────
@@ -108,14 +107,14 @@ async def test_registry_run_all_skips_empty_results():
 # ── BraveSearchTool ────────────────────────────────────────────────────────
 
 def test_brave_search_unavailable_without_key():
-    with patch("app.services.mcp_client.settings") as mock_settings:
+    with patch("app.adapters.mcp.registry.settings") as mock_settings:
         mock_settings.brave_api_key = None
         tool = BraveSearchTool()
         assert tool.is_available() is False
 
 
 def test_brave_search_available_with_key():
-    with patch("app.services.mcp_client.settings") as mock_settings:
+    with patch("app.adapters.mcp.registry.settings") as mock_settings:
         mock_settings.brave_api_key = "bsv-test-key"
         tool = BraveSearchTool()
         assert tool.is_available() is True
@@ -135,7 +134,7 @@ async def test_brave_search_run_returns_formatted_results():
     mock_response.json.return_value = fake_response
     mock_response.raise_for_status = MagicMock()
 
-    with patch("app.services.mcp_client.settings") as mock_settings, \
+    with patch("app.adapters.mcp.registry.settings") as mock_settings, \
          patch("httpx.AsyncClient") as mock_client_cls:
         mock_settings.brave_api_key = "bsv-test-key"
         mock_client = AsyncMock()
@@ -152,7 +151,7 @@ async def test_brave_search_run_returns_formatted_results():
 
 
 async def test_brave_search_run_returns_empty_on_http_error():
-    with patch("app.services.mcp_client.settings") as mock_settings, \
+    with patch("app.adapters.mcp.registry.settings") as mock_settings, \
          patch("httpx.AsyncClient") as mock_client_cls:
         mock_settings.brave_api_key = "bsv-test-key"
         mock_client = AsyncMock()
@@ -173,7 +172,7 @@ async def test_brave_search_run_returns_empty_when_no_web_results():
     mock_response.json.return_value = fake_response
     mock_response.raise_for_status = MagicMock()
 
-    with patch("app.services.mcp_client.settings") as mock_settings, \
+    with patch("app.adapters.mcp.registry.settings") as mock_settings, \
          patch("httpx.AsyncClient") as mock_client_cls:
         mock_settings.brave_api_key = "bsv-test-key"
         mock_client = AsyncMock()
@@ -187,21 +186,19 @@ async def test_brave_search_run_returns_empty_when_no_web_results():
     assert result == ""
 
 
-# ── setup_mcp ──────────────────────────────────────────────────────────────
+# ── build_mcp_registry ─────────────────────────────────────────────────────
 
-def test_setup_mcp_registers_brave_when_key_present():
-    with patch("app.services.mcp_client.settings") as mock_settings:
+def test_build_mcp_registry_registers_brave_when_key_present():
+    with patch("app.adapters.mcp.registry.settings") as mock_settings:
         mock_settings.brave_api_key = "bsv-test-key"
-        setup_mcp()
-        registry = get_registry()
+        registry = build_mcp_registry()
         names = [t.name for t in registry.available]
         assert "brave_search" in names
 
 
-def test_setup_mcp_skips_brave_when_no_key():
-    with patch("app.services.mcp_client.settings") as mock_settings:
+def test_build_mcp_registry_skips_brave_when_no_key():
+    with patch("app.adapters.mcp.registry.settings") as mock_settings:
         mock_settings.brave_api_key = None
-        setup_mcp()
-        registry = get_registry()
+        registry = build_mcp_registry()
         names = [t.name for t in registry.available]
         assert "brave_search" not in names
