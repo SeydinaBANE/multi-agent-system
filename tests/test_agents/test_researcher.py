@@ -1,6 +1,6 @@
 """Tests de l'agent Researcher."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from tests.conftest import make_state
 
@@ -12,99 +12,76 @@ def _mock_registry(mcp_results: dict | None = None):
     return registry
 
 
-@patch("app.agents.researcher.get_registry")
-@patch("app.agents.researcher.search", new_callable=AsyncMock)
-@patch("app.agents.researcher.chat_completion", new_callable=AsyncMock)
-async def test_researcher_appends_to_research(mock_llm, mock_search, mock_get_registry):
-    from app.agents.researcher import researcher_node
+def _make_node(llm_response: str, rag_hits: list[str] | None = None, mcp_results: dict | None = None):
+    from app.agents.researcher import make_researcher_node
 
-    mock_search.return_value = []
-    mock_llm.return_value = "Le RAG combine retrieval et génération."
-    mock_get_registry.return_value = _mock_registry()
+    mock_llm = AsyncMock()
+    mock_llm.chat_completion.return_value = llm_response
+    mock_vector_store = AsyncMock()
+    mock_vector_store.search.return_value = rag_hits or []
+    mock_registry = _mock_registry(mcp_results)
+    return make_researcher_node(mock_llm, mock_vector_store, mock_registry), mock_llm
+
+
+async def test_researcher_appends_to_research():
+    node, _ = _make_node("Le RAG combine retrieval et génération.")
     state = make_state(research=[])
 
-    result = await researcher_node(state)
+    result = await node(state)
 
     assert len(result["research"]) == 1
     assert result["research"][0] == "Le RAG combine retrieval et génération."
 
 
-@patch("app.agents.researcher.get_registry")
-@patch("app.agents.researcher.search", new_callable=AsyncMock)
-@patch("app.agents.researcher.chat_completion", new_callable=AsyncMock)
-async def test_researcher_increments_iteration(mock_llm, mock_search, mock_get_registry):
-    from app.agents.researcher import researcher_node
+async def test_researcher_increments_iteration():
+    node, _ = _make_node("Réponse.")
 
-    mock_search.return_value = []
-    mock_llm.return_value = "Réponse."
-    mock_get_registry.return_value = _mock_registry()
-    result = await researcher_node(make_state(iterations=0))
+    result = await node(make_state(iterations=0))
 
     assert result["iterations"] == 1
 
 
-@patch("app.agents.researcher.get_registry")
-@patch("app.agents.researcher.search", new_callable=AsyncMock)
-@patch("app.agents.researcher.chat_completion", new_callable=AsyncMock)
-async def test_researcher_includes_critique_on_second_pass(mock_llm, mock_search, mock_get_registry):
-    from app.agents.researcher import researcher_node
-
-    mock_search.return_value = []
-    mock_llm.return_value = "Réponse enrichie."
-    mock_get_registry.return_value = _mock_registry()
+async def test_researcher_includes_critique_on_second_pass():
+    node, mock_llm = _make_node("Réponse enrichie.")
     state = make_state(critique="REVISION_NEEDED: ajoute des exemples concrets", iterations=1)
 
-    await researcher_node(state)
+    await node(state)
 
-    prompt_user = mock_llm.call_args[1]["messages"][-1]["content"]
+    prompt_user = mock_llm.chat_completion.call_args[1]["messages"][-1]["content"]
     assert "ajoute des exemples concrets" in prompt_user
 
 
-@patch("app.agents.researcher.get_registry")
-@patch("app.agents.researcher.search", new_callable=AsyncMock)
-@patch("app.agents.researcher.chat_completion", new_callable=AsyncMock)
-async def test_researcher_uses_rag_context(mock_llm, mock_search, mock_get_registry):
-    from app.agents.researcher import researcher_node
+async def test_researcher_uses_rag_context():
+    node, mock_llm = _make_node("Réponse.", rag_hits=["Document RAG pertinent."])
 
-    mock_search.return_value = ["Document RAG pertinent."]
-    mock_llm.return_value = "Réponse."
-    mock_get_registry.return_value = _mock_registry()
+    await node(make_state())
 
-    await researcher_node(make_state())
-
-    prompt_user = mock_llm.call_args[1]["messages"][-1]["content"]
+    prompt_user = mock_llm.chat_completion.call_args[1]["messages"][-1]["content"]
     assert "Document RAG pertinent." in prompt_user
 
 
-@patch("app.agents.researcher.get_registry")
-@patch("app.agents.researcher.search", new_callable=AsyncMock)
-@patch("app.agents.researcher.chat_completion", new_callable=AsyncMock)
-async def test_researcher_injects_mcp_results_in_prompt(mock_llm, mock_search, mock_get_registry):
-    from app.agents.researcher import researcher_node
+async def test_researcher_injects_mcp_results_in_prompt():
+    node, mock_llm = _make_node(
+        "Réponse avec web.",
+        mcp_results={"brave_search": "Résultat Brave Search pertinent."},
+    )
 
-    mock_search.return_value = []
-    mock_llm.return_value = "Réponse avec web."
-    mock_get_registry.return_value = _mock_registry({"brave_search": "Résultat Brave Search pertinent."})
+    await node(make_state())
 
-    await researcher_node(make_state())
-
-    prompt_user = mock_llm.call_args[1]["messages"][-1]["content"]
+    prompt_user = mock_llm.chat_completion.call_args[1]["messages"][-1]["content"]
     assert "Résultat Brave Search pertinent." in prompt_user
     assert "brave_search" in prompt_user
 
 
-@patch("app.agents.researcher.get_registry")
-@patch("app.agents.researcher.search", new_callable=AsyncMock)
-@patch("app.agents.researcher.chat_completion", new_callable=AsyncMock)
-async def test_researcher_works_without_mcp(mock_llm, mock_search, mock_get_registry):
-    from app.agents.researcher import researcher_node
+async def test_researcher_works_without_mcp():
+    node, mock_llm = _make_node(
+        "Réponse sans web.",
+        rag_hits=["Contexte RAG."],
+        mcp_results={},
+    )
 
-    mock_search.return_value = ["Contexte RAG."]
-    mock_llm.return_value = "Réponse sans web."
-    mock_get_registry.return_value = _mock_registry({})  # aucun outil MCP
-
-    result = await researcher_node(make_state())
+    result = await node(make_state())
 
     assert result["research"][0] == "Réponse sans web."
-    prompt_user = mock_llm.call_args[1]["messages"][-1]["content"]
+    prompt_user = mock_llm.chat_completion.call_args[1]["messages"][-1]["content"]
     assert "Contexte web" not in prompt_user

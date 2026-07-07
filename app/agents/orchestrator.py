@@ -12,12 +12,15 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver  # fallback tests
 from sqlalchemy import select
 
-from app.agents.router import classify
-from app.agents.state import AgentState
-from app.agents.planner import planner_node
-from app.agents.researcher import researcher_node
-from app.agents.critic import critic_node
-from app.agents.writer import writer_node
+from app.adapters.llm.openrouter import OpenRouterLLM
+from app.adapters.mcp.registry import build_mcp_registry
+from app.adapters.vector_store.qdrant_store import QdrantVectorStore
+from app.agents.router import make_classifier
+from app.domain.state import AgentState
+from app.agents.planner import make_planner_node
+from app.agents.researcher import make_researcher_node
+from app.agents.critic import make_critic_node
+from app.agents.writer import make_writer_node
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import Conversation, Run
@@ -26,6 +29,20 @@ from app.services.cache import publish
 from app.services.llm import stream_completion
 
 log = get_logger("orchestrator")
+
+# NOTE(migration hexagonale) : pont temporaire — ce module est entièrement
+# remplacé par app/agents/graph.py + app/application/workflow_service.py
+# en Phase E ; ces instances par défaut évitent de toucher le reste
+# d'orchestrator.py pendant la transition.
+_llm = OpenRouterLLM()
+_vector_store = QdrantVectorStore(llm=_llm)
+_mcp_registry = build_mcp_registry()
+
+classify = make_classifier(_llm)
+planner_node = make_planner_node(_llm)
+researcher_node = make_researcher_node(_llm, _vector_store, _mcp_registry)
+critic_node = make_critic_node(_llm)
+writer_node = make_writer_node(_llm)
 
 
 def should_revise(state: AgentState) -> Literal["writer", "researcher"]:
