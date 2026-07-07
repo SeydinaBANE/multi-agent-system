@@ -56,7 +56,7 @@ async def websocket_run(websocket: WebSocket) -> None:
 
     except WebSocketDisconnect:
         pass
-    except Exception as exc:
+    except Exception:
         try:
             await websocket.send_json({"type": "error", "detail": "Erreur interne"})
         except Exception:

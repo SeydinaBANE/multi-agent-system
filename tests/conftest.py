@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 

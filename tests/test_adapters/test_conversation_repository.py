@@ -1,6 +1,6 @@
 """Tests de SqlAlchemyConversationRepository."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from app.adapters.db.conversation_repository import SqlAlchemyConversationRepository
 

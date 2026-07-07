@@ -59,7 +59,7 @@ async def ingest_one(
     """Indexe un document texte dans Qdrant."""
     try:
         await container.vector_store.upsert(doc.text, doc.id)
-    except Exception as exc:
+    except Exception:
         raise HTTPException(status_code=500, detail="Erreur interne")
     return DocumentOut(id=doc.id, indexed=True, chars=len(doc.text))
 
