@@ -5,9 +5,8 @@ import json
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from app.agents.orchestrator import stream_and_publish
+from app.application.workflow_service import WorkflowService
 from app.core.config import settings
-from app.services.cache import subscribe
 
 
 async def websocket_run(websocket: WebSocket) -> None:
@@ -35,10 +34,11 @@ async def websocket_run(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "error", "detail": "La tâche est trop longue (max 10 000 chars)."})
             return
 
+        workflow_service: WorkflowService = websocket.app.state.workflow_service
         channel = f"run:{session_id}"
-        pubsub = await subscribe(channel)
+        pubsub = await websocket.app.state.container.cache.subscribe(channel)
 
-        workflow_task = asyncio.create_task(stream_and_publish(task, session_id))
+        workflow_task = asyncio.create_task(workflow_service.stream_and_publish(task, session_id))
         bg: set = websocket.app.state.background_tasks
         bg.add(workflow_task)
         workflow_task.add_done_callback(bg.discard)

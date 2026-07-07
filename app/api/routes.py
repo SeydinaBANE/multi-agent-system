@@ -5,15 +5,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.orchestrator import run_workflow
 from app.api.auth import verify_api_key
+from app.api.deps import get_container, get_workflow_service
+from app.application.container import Container
+from app.application.workflow_service import WorkflowService
 from app.core.limiter import limiter
 from app.core.logging import get_logger
-from app.db.models import Conversation, Run
-from app.db.session import get_session
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
 log = get_logger("api")
@@ -59,34 +57,26 @@ class SessionHistory(BaseModel):
 async def run(
     request: Request,
     body: RunRequest,
-    db: AsyncSession = Depends(get_session),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
+    container: Container = Depends(get_container),
     _: None = Depends(verify_api_key),
 ) -> RunResponse:
     """Lance le pipeline multi-agents, persiste le run en base et retourne la réponse finale."""
     t0 = time.perf_counter()
     log.info("run_start", session_id=body.session_id, task=body.task[:80])
     try:
-        state = await run_workflow(body.task, body.session_id)
+        state = await workflow_service.run_workflow(body.task, body.session_id)
     except Exception as exc:
         log.error("run_failed", session_id=body.session_id, error=str(exc))
         raise HTTPException(status_code=500, detail="Erreur interne")
 
-    result = await db.execute(
-        select(Conversation).where(Conversation.session_id == body.session_id)
+    conversation_id = await container.repository.find_or_create_conversation(body.session_id)
+    await container.repository.add_run(
+        conversation_id,
+        body.task,
+        state["final_answer"],
+        state["iterations"],
     )
-    conversation = result.scalar_one_or_none()
-    if conversation is None:
-        conversation = Conversation(session_id=body.session_id)
-        db.add(conversation)
-        await db.flush()
-
-    db.add(Run(
-        conversation_id=conversation.id,
-        task=body.task,
-        final_answer=state["final_answer"],
-        iterations=state["iterations"],
-    ))
-    await db.commit()
     log.info("run_complete", session_id=body.session_id, iterations=state["iterations"], duration=round(time.perf_counter() - t0, 2))
 
     return RunResponse(
@@ -99,24 +89,14 @@ async def run(
 @router.get("/sessions/{session_id}/runs", response_model=SessionHistory)
 async def get_session_runs(
     session_id: str,
-    db: AsyncSession = Depends(get_session),
+    container: Container = Depends(get_container),
     _: None = Depends(verify_api_key),
 ) -> SessionHistory:
     """Retourne l'historique de tous les runs d'une session, du plus récent au plus ancien."""
-    result = await db.execute(
-        select(Conversation).where(Conversation.session_id == session_id)
-    )
-    conversation = result.scalar_one_or_none()
+    runs = await container.repository.list_runs(session_id)
 
-    if conversation is None:
+    if runs is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' introuvable.")
-
-    runs_result = await db.execute(
-        select(Run)
-        .where(Run.conversation_id == conversation.id)
-        .order_by(Run.created_at.desc())
-    )
-    runs = runs_result.scalars().all()
 
     return SessionHistory(
         session_id=session_id,

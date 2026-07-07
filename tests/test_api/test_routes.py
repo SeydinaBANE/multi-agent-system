@@ -1,28 +1,15 @@
 """Tests des endpoints POST /api/v1/run et GET /api/v1/sessions/{id}/runs."""
 
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from tests.conftest import make_state
 
 
-def make_run(id=1, task="Explique le RAG", final_answer="Réponse.", iterations=1):
-    """Construit un objet Run mocké avec les attributs SQLAlchemy."""
-    run = MagicMock()
-    run.id = id
-    run.task = task
-    run.final_answer = final_answer
-    run.iterations = iterations
-    run.created_at = datetime(2024, 1, 15, 10, 0, 0)
-    return run
-
-
-@patch("app.api.routes.run_workflow", new_callable=AsyncMock)
-async def test_run_returns_final_answer(mock_workflow, client):
-    mock_workflow.return_value = make_state(
+async def test_run_returns_final_answer(client):
+    client.workflow_service.run_workflow = AsyncMock(return_value=make_state(
         final_answer="Le RAG combine retrieval et génération.",
         iterations=1,
-    )
+    ))
 
     response = await client.post("/api/v1/run", json={
         "task": "Explique le RAG",
@@ -36,9 +23,8 @@ async def test_run_returns_final_answer(mock_workflow, client):
     assert data["iterations"] == 1
 
 
-@patch("app.api.routes.run_workflow", new_callable=AsyncMock)
-async def test_run_returns_500_on_workflow_error(mock_workflow, client):
-    mock_workflow.side_effect = RuntimeError("OpenRouter timeout")
+async def test_run_returns_500_on_workflow_error(client):
+    client.workflow_service.run_workflow = AsyncMock(side_effect=RuntimeError("OpenRouter timeout"))
 
     response = await client.post("/api/v1/run", json={
         "task": "Tâche",
@@ -49,108 +35,63 @@ async def test_run_returns_500_on_workflow_error(mock_workflow, client):
     assert response.json()["detail"] == "Erreur interne"
 
 
-@patch("app.api.routes.run_workflow", new_callable=AsyncMock)
-async def test_run_missing_fields_returns_422(mock_workflow, client):
+async def test_run_missing_fields_returns_422(client):
     response = await client.post("/api/v1/run", json={"task": "Tâche"})
     assert response.status_code == 422
 
 
-@patch("app.api.routes.run_workflow", new_callable=AsyncMock)
-async def test_run_calls_workflow_with_correct_args(mock_workflow, client):
-    mock_workflow.return_value = make_state(final_answer="OK", iterations=0)
+async def test_run_calls_workflow_with_correct_args(client):
+    client.workflow_service.run_workflow = AsyncMock(return_value=make_state(final_answer="OK", iterations=0))
 
     await client.post("/api/v1/run", json={
         "task": "Ma tâche",
         "session_id": "s-42",
     })
 
-    mock_workflow.assert_called_once_with("Ma tâche", "s-42")
+    client.workflow_service.run_workflow.assert_called_once_with("Ma tâche", "s-42")
+
+
+async def test_run_persists_via_repository(client):
+    client.workflow_service.run_workflow = AsyncMock(return_value=make_state(final_answer="OK", iterations=3))
+
+    await client.post("/api/v1/run", json={
+        "task": "Ma tâche",
+        "session_id": "s-persist",
+    })
+
+    runs = client.container.repository.seeded_runs["s-persist"]
+    assert len(runs) == 1
+    assert runs[0].iterations == 3
 
 
 # ── GET /api/v1/sessions/{session_id}/runs ────────────────────────────────
 
 async def test_get_runs_returns_history(client):
-    conv = MagicMock()
-    conv.id = 1
-
-    runs = [
-        make_run(id=2, task="Tâche 2", iterations=2),
-        make_run(id=1, task="Tâche 1", iterations=1),
-    ]
-
-    scalars_mock = MagicMock()
-    scalars_mock.all.return_value = runs
-
-    from app.db.session import get_session
-
-    async def override():
-        session = AsyncMock()
-        first_result = MagicMock()
-        first_result.scalar_one_or_none.return_value = conv
-        second_result = MagicMock()
-        second_result.scalars.return_value = scalars_mock
-        session.execute.side_effect = [first_result, second_result]
-        yield session
-
-    from app.main import app
-    app.dependency_overrides[get_session] = override
+    repo = client.container.repository
+    conv_id = await repo.find_or_create_conversation("session-abc")
+    await repo.add_run(conv_id, "Tâche 1", "Réponse 1", 1)
+    await repo.add_run(conv_id, "Tâche 2", "Réponse 2", 2)
 
     response = await client.get("/api/v1/sessions/session-abc/runs")
-
-    app.dependency_overrides.clear()
 
     assert response.status_code == 200
     data = response.json()
     assert data["session_id"] == "session-abc"
     assert data["total_runs"] == 2
-    assert data["runs"][0]["task"] == "Tâche 2"
+    assert data["runs"][0]["task"] == "Tâche 2"  # le plus récent en premier
 
 
 async def test_get_runs_returns_404_for_unknown_session(client):
-    from app.db.session import get_session
-
-    async def override():
-        session = AsyncMock()
-        result = MagicMock()
-        result.scalar_one_or_none.return_value = None
-        session.execute.return_value = result
-        yield session
-
-    from app.main import app
-    app.dependency_overrides[get_session] = override
-
     response = await client.get("/api/v1/sessions/session-inconnue/runs")
-
-    app.dependency_overrides.clear()
 
     assert response.status_code == 404
     assert "introuvable" in response.json()["detail"]
 
 
 async def test_get_runs_empty_session(client):
-    conv = MagicMock()
-    conv.id = 99
-
-    scalars_mock = MagicMock()
-    scalars_mock.all.return_value = []
-
-    from app.db.session import get_session
-
-    async def override():
-        session = AsyncMock()
-        first_result = MagicMock()
-        first_result.scalar_one_or_none.return_value = conv
-        second_result = MagicMock()
-        second_result.scalars.return_value = scalars_mock
-        session.execute.side_effect = [first_result, second_result]
-        yield session
-
-    from app.main import app
-    app.dependency_overrides[get_session] = override
+    await client.container.repository.find_or_create_conversation("session-vide")
 
     response = await client.get("/api/v1/sessions/session-vide/runs")
-
-    app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert response.json()["total_runs"] == 0

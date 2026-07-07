@@ -5,8 +5,7 @@ from unittest.mock import AsyncMock, patch
 import uuid
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_ingest_one_returns_201(mock_upsert, client):
+async def test_ingest_one_returns_201(client):
     response = await client.post("/api/v1/documents", json={
         "text": "Le RAG est efficace.",
         "id": "doc-1",
@@ -17,8 +16,7 @@ async def test_ingest_one_returns_201(mock_upsert, client):
     assert response.json()["indexed"] is True
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_ingest_one_autogenerates_id(mock_upsert, client):
+async def test_ingest_one_autogenerates_id(client):
     response = await client.post("/api/v1/documents", json={
         "text": "Document sans id explicite.",
     })
@@ -29,14 +27,12 @@ async def test_ingest_one_autogenerates_id(mock_upsert, client):
     uuid.UUID(generated_id)
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_ingest_one_calls_upsert(mock_upsert, client):
+async def test_ingest_one_calls_upsert(client):
     await client.post("/api/v1/documents", json={"text": "Texte.", "id": "doc-x"})
-    mock_upsert.assert_called_once_with("Texte.", "doc-x")
+    assert ("Texte.", "doc-x") in client.container.vector_store.upserted
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_ingest_batch_returns_correct_count(mock_upsert, client):
+async def test_ingest_batch_returns_correct_count(client):
     response = await client.post("/api/v1/documents/batch", json={
         "documents": [
             {"text": "Doc A", "id": "a"},
@@ -52,9 +48,8 @@ async def test_ingest_batch_returns_correct_count(mock_upsert, client):
     assert len(data["results"]) == 3
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_ingest_batch_partial_failure(mock_upsert, client):
-    mock_upsert.side_effect = [None, RuntimeError("Qdrant down"), None]
+async def test_ingest_batch_partial_failure(client):
+    client.container.vector_store.upsert = AsyncMock(side_effect=[None, RuntimeError("Qdrant down"), None])
 
     response = await client.post("/api/v1/documents/batch", json={
         "documents": [
@@ -72,9 +67,8 @@ async def test_ingest_batch_partial_failure(mock_upsert, client):
     assert failed[0]["id"] == "b"
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_ingest_one_upsert_error_returns_500(mock_upsert, client):
-    mock_upsert.side_effect = RuntimeError("Qdrant indisponible")
+async def test_ingest_one_upsert_error_returns_500(client):
+    client.container.vector_store.upsert = AsyncMock(side_effect=RuntimeError("Qdrant indisponible"))
 
     response = await client.post("/api/v1/documents", json={
         "text": "Texte.",
@@ -86,9 +80,8 @@ async def test_ingest_one_upsert_error_returns_500(mock_upsert, client):
 
 # ── /upload ───────────────────────────────────────────────────────────────
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
 @patch("app.api.documents.parse_txt", return_value="Contenu TXT extrait.")
-async def test_upload_txt_returns_201(mock_parse, mock_upsert, client):
+async def test_upload_txt_returns_201(mock_parse, client):
     content = b"Contenu TXT extrait."
     response = await client.post(
         "/api/v1/documents/upload",
@@ -98,8 +91,7 @@ async def test_upload_txt_returns_201(mock_parse, mock_upsert, client):
     assert response.json()["indexed"] is True
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_upload_unsupported_type_returns_415(mock_upsert, client):
+async def test_upload_unsupported_type_returns_415(client):
     response = await client.post(
         "/api/v1/documents/upload",
         files={"file": ("image.png", io.BytesIO(b"\x89PNG"), "image/png")},
@@ -107,8 +99,7 @@ async def test_upload_unsupported_type_returns_415(mock_upsert, client):
     assert response.status_code == 415
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
-async def test_upload_too_large_returns_413(mock_upsert, client):
+async def test_upload_too_large_returns_413(client):
     # Crée un contenu > 50 MB
     big_content = b"x" * (51 * 1024 * 1024)
     response = await client.post(
@@ -120,9 +111,8 @@ async def test_upload_too_large_returns_413(mock_upsert, client):
 
 # ── /url ──────────────────────────────────────────────────────────────────
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
 @patch("app.api.documents.parse_url", new_callable=AsyncMock, return_value="Texte extrait de la page.")
-async def test_ingest_url_returns_201(mock_parse, mock_upsert, client):
+async def test_ingest_url_returns_201(mock_parse, client):
     response = await client.post(
         "/api/v1/documents/url",
         json={"url": "https://example.com/article"},
@@ -132,9 +122,8 @@ async def test_ingest_url_returns_201(mock_parse, mock_upsert, client):
     mock_parse.assert_called_once_with("https://example.com/article")
 
 
-@patch("app.api.documents.upsert", new_callable=AsyncMock)
 @patch("app.api.documents.parse_url", new_callable=AsyncMock, side_effect=ValueError("SSRF denied"))
-async def test_ingest_url_ssrf_blocked_returns_422(mock_parse, mock_upsert, client):
+async def test_ingest_url_ssrf_blocked_returns_422(mock_parse, client):
     response = await client.post(
         "/api/v1/documents/url",
         json={"url": "http://localhost:5432"},

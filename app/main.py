@@ -10,16 +10,16 @@ from fastapi.responses import FileResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.agents.orchestrator import close_checkpointer, setup_checkpointer
-from app.services.mcp_client import close_mcp, setup_mcp
+from app.adapters.checkpointer.postgres_checkpointer import CheckpointerAdapter
+from app.adapters.db.session import init_db
+from app.application.container import build_container
+from app.application.workflow_service import WorkflowService
 from app.api.documents import router as documents_router
 from app.api.routes import router
 from app.api.websocket import websocket_run
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import configure_logging, get_logger
-from app.db.session import init_db
-from app.services.cache import get_redis
 
 log = get_logger("app")
 
@@ -29,16 +29,18 @@ async def lifespan(app: FastAPI):
     app.state.background_tasks: set = set()
     configure_logging()
     await init_db()
-    await setup_checkpointer()
-    setup_mcp()
+
+    container = build_container()
+    checkpointer = CheckpointerAdapter()
+    await checkpointer.setup()
+    app.state.container = container
+    app.state.workflow_service = WorkflowService(container, checkpointer)
     log.info("startup_complete")
     yield
     if app.state.background_tasks:
         await asyncio.gather(*app.state.background_tasks, return_exceptions=True)
-    await close_checkpointer()
-    await close_mcp()
-    r = await get_redis()
-    await r.aclose()
+    await checkpointer.close()
+    await app.state.container.cache.close()
     log.info("shutdown")
 
 

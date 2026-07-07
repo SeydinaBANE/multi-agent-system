@@ -5,10 +5,11 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+from app.adapters.document_parser import parse_docx, parse_pdf, parse_txt, parse_url
 from app.api.auth import verify_api_key
+from app.api.deps import get_container
+from app.application.container import Container
 from app.core.limiter import limiter
-from app.services.document_parser import parse_docx, parse_pdf, parse_txt, parse_url
-from app.services.vector_store import upsert
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -52,11 +53,12 @@ class UrlIn(BaseModel):
 async def ingest_one(
     request: Request,
     doc: DocumentIn,
+    container: Container = Depends(get_container),
     _: None = Depends(verify_api_key),
 ) -> DocumentOut:
     """Indexe un document texte dans Qdrant."""
     try:
-        await upsert(doc.text, doc.id)
+        await container.vector_store.upsert(doc.text, doc.id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Erreur interne")
     return DocumentOut(id=doc.id, indexed=True, chars=len(doc.text))
@@ -67,6 +69,7 @@ async def ingest_one(
 async def ingest_batch(
     request: Request,
     body: BatchIn,
+    container: Container = Depends(get_container),
     _: None = Depends(verify_api_key),
 ) -> BatchOut:
     """Indexe plusieurs documents en lot."""
@@ -74,7 +77,7 @@ async def ingest_batch(
     failed = 0
     for doc in body.documents:
         try:
-            await upsert(doc.text, doc.id)
+            await container.vector_store.upsert(doc.text, doc.id)
             results.append(DocumentOut(id=doc.id, indexed=True, chars=len(doc.text)))
         except Exception:
             results.append(DocumentOut(id=doc.id, indexed=False))
@@ -88,6 +91,7 @@ async def ingest_file(
     request: Request,
     file: UploadFile = File(...),
     doc_id: str | None = Form(default=None),
+    container: Container = Depends(get_container),
     _: None = Depends(verify_api_key),
 ) -> DocumentOut:
     """Indexe un fichier PDF, DOCX ou TXT dans Qdrant."""
@@ -122,7 +126,7 @@ async def ingest_file(
         raise HTTPException(status_code=422, detail="Aucun texte extrait du fichier.")
     final_id = doc_id or str(uuid.uuid4())
     try:
-        await upsert(text, final_id)
+        await container.vector_store.upsert(text, final_id)
     except Exception:
         raise HTTPException(status_code=500, detail="Erreur interne")
     return DocumentOut(id=final_id, indexed=True, chars=len(text))
@@ -133,6 +137,7 @@ async def ingest_file(
 async def ingest_url(
     request: Request,
     body: UrlIn,
+    container: Container = Depends(get_container),
     _: None = Depends(verify_api_key),
 ) -> DocumentOut:
     """Scrape une page web et l'indexe dans Qdrant."""
@@ -146,7 +151,7 @@ async def ingest_url(
         raise HTTPException(status_code=422, detail="Aucun texte extrait de l'URL.")
     final_id = body.id or str(uuid.uuid4())
     try:
-        await upsert(text, final_id)
+        await container.vector_store.upsert(text, final_id)
     except Exception:
         raise HTTPException(status_code=500, detail="Erreur interne")
     return DocumentOut(id=final_id, indexed=True, chars=len(text))
