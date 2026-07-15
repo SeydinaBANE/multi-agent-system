@@ -68,9 +68,13 @@ graph LR
 ```bash
 # 1. Variables d'environnement
 cp .env.example .env
-# → Renseigner OPENROUTER_API_KEY
+# → Renseigner OPENROUTER_API_KEY (et API_KEY si tu veux l'auth)
 
-# 2. Lancer tous les services
+# 2. Frontend local (optionnel — si tu veux l'auth en dev)
+echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > frontend-next/.env.local
+echo "NEXT_PUBLIC_API_KEY=ma-clé"               >> frontend-next/.env.local
+
+# 3. Lancer tous les services
 docker compose up -d
 
 # Interface    → http://localhost:3000
@@ -80,6 +84,44 @@ docker compose up -d
 # Adminer      → http://localhost:8080   (PostgreSQL GUI)
 # RedisInsight → http://localhost:5540   (Redis GUI)
 ```
+
+---
+
+## Sécurité
+
+### Auth Bearer (optionnelle)
+
+Si `API_KEY` est définie dans `.env`, tous les endpoints REST et WebSocket l'exigent. Si elle est absente, l'auth est désactivée — safe en dev local.
+
+```bash
+# Générer une clé
+openssl rand -hex 32
+
+# Appeler l'API avec auth
+curl -H "Authorization: Bearer <clé>" http://localhost:8000/api/v1/run ...
+```
+
+### Rate limiting (slowapi)
+
+| Endpoint | Limite |
+|---|---|
+| `POST /run` | 20 req/min |
+| `POST /documents` | 30 req/min |
+| `POST /documents/upload` | 20 req/min |
+| `POST /documents/url` | 20 req/min |
+| `POST /documents/batch` | 10 req/min |
+
+Dépassement → `429 Too Many Requests`.
+
+### SSRF
+
+Toutes les URLs soumises à `/documents/url` sont validées par résolution DNS + vérification IP — les plages RFC 1918, loopback, link-local et ULA sont bloquées.
+
+### Validation des inputs
+
+- `task` : max 10 000 caractères
+- `session_id` : max 255 caractères, uniquement `[a-zA-Z0-9_-]`
+- Erreurs internes masquées (`"Erreur interne"` — jamais `str(exc)` exposé)
 
 ---
 
@@ -96,9 +138,11 @@ docker compose up -d
 Railway vars :
   OPENROUTER_API_KEY, DATABASE_URL, REDIS_URL
   QDRANT_HOST, QDRANT_API_KEY, ALLOWED_ORIGINS
+  API_KEY=<openssl rand -hex 32>
 
-Vercel vars :
+Vercel vars (définir AVANT le deploy — variables de build) :
   NEXT_PUBLIC_API_URL=https://xxx.up.railway.app
+  NEXT_PUBLIC_API_KEY=<même valeur que API_KEY>
   Root Directory = frontend-next
 ```
 
@@ -177,23 +221,25 @@ registry.register(GitHubSearchTool())
 ## Ingestion RAG
 
 ```bash
+AUTH="-H 'Authorization: Bearer ma-clé'"  # omis si API_KEY non définie
+
 # Texte brut
 curl -X POST http://localhost:8000/api/v1/documents \
-  -H "Content-Type: application/json" \
+  $AUTH -H "Content-Type: application/json" \
   -d '{"text": "Le RAG combine recherche vectorielle et génération LLM.", "id": "doc-1"}'
 
 # Fichier PDF / DOCX / TXT
 curl -X POST http://localhost:8000/api/v1/documents/upload \
-  -F "file=@rapport.pdf"
+  $AUTH -F "file=@rapport.pdf"
 
 # Page web
 curl -X POST http://localhost:8000/api/v1/documents/url \
-  -H "Content-Type: application/json" \
+  $AUTH -H "Content-Type: application/json" \
   -d '{"url": "https://example.com/article"}'
 
 # Lot de documents
 curl -X POST http://localhost:8000/api/v1/documents/batch \
-  -H "Content-Type: application/json" \
+  $AUTH -H "Content-Type: application/json" \
   -d '{"documents": [{"text": "...", "id": "doc-2"}, {"text": "...", "id": "doc-3"}]}'
 ```
 
@@ -222,7 +268,8 @@ const ws = new WebSocket("ws://localhost:8000/ws/run");
 
 ws.onopen = () => ws.send(JSON.stringify({
   task: "Analyse les tendances IA en 2025",
-  session_id: "session-1"
+  session_id: "session-1",
+  token: "ma-clé-api"  // optionnel — requis si API_KEY est définie
 }));
 
 ws.onmessage = ({ data }) => {
@@ -313,6 +360,7 @@ alembic/                  # Migrations versionnées
 | **Persistance universelle** | Runs persistés en base que ce soit via REST ou WebSocket |
 | **RAG multi-sources** | Qdrant + ingestion texte, PDF, DOCX, TXT, URL avec extraction automatique |
 | **Routing LLM** | Modèle cheap (Planner/Critic/Router) vs smart (Writer/Chat) — optimisation des coûts |
+| **Sécurité** | Auth Bearer optionnelle, rate limiting slowapi, SSRF par résolution IP, inputs validés, erreurs masquées |
 | **MCP extensible** | Brave Search activé par clé API — ajouter un outil = 1 classe + 1 ligne, jamais de rupture |
 | **Checkpointing** | LangGraph mémorise l'état par `session_id` entre les requêtes |
 | **Observabilité** | structlog dans chaque agent — modèle, durée, itérations, outils MCP utilisés |
