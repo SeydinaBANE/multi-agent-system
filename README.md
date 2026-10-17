@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white" />
   <img src="https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/LangGraph-0.2-FF6B35" />
-  <img src="https://img.shields.io/badge/MCP-Brave%20Search-orange?logo=brave&logoColor=white" />
+  <img src="https://img.shields.io/badge/MCP-Parallel%20%2B%20Brave-orange?logo=brave&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" />
   <img src="https://img.shields.io/badge/Railway-Backend-0B0D0E?logo=railway&logoColor=white" />
   <img src="https://img.shields.io/badge/Vercel-Frontend-000000?logo=vercel&logoColor=white" />
@@ -18,7 +18,7 @@
 <p align="center">
   Système multi-agents orchestré par <strong>LangGraph</strong>, avec routage automatique<br/>
   <strong>chat direct</strong> ou <strong>pipeline complet</strong>, ingestion RAG multi-sources,<br/>
-  outils <strong>MCP</strong> extensibles (Brave Search), streaming WebSocket via <strong>Redis pub/sub</strong><br/>
+  outils <strong>MCP</strong> extensibles (Parallel Search et Brave Search), streaming WebSocket via <strong>Redis pub/sub</strong><br/>
   et interface <strong>Next.js</strong>.
 </p>
 
@@ -39,7 +39,7 @@ graph LR
 
     PL --> RE[🔍 Researcher]
     RE -->|RAG| QD[(Qdrant)]
-    RE -->|MCP| BS[🌐 Brave Search]
+    RE -->|MCP| BS[🌐 Parallel / Brave Search]
     RE --> CR[⚖️ Critic]
 
     CR -->|REVISION_NEEDED\niter < 2| RE
@@ -181,21 +181,39 @@ Accessible sur **http://localhost:3000** — Next.js 14, App Router, Tailwind CS
 
 Le Researcher exécute **RAG Qdrant + tous les outils MCP en parallèle** et injecte les résultats dans le prompt.
 
-### Activer Brave Search
+### Choisir la recherche web
 
-1. Obtenir une clé gratuite sur [brave.com/search/api](https://brave.com/search/api/)
-2. Ajouter dans `.env` :
+Par défaut (`SEARCH_PROVIDER=auto`), une clé `BRAVE_API_KEY` existante conserve
+Brave Search. Sans clé Brave, le Researcher utilise automatiquement
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) :
+recherche gratuite en mode Fast, sans compte ni clé API, via
+`https://search.parallel.ai/mcp` (Streamable HTTP).
 
-```env
-BRAVE_API_KEY=bsv-votre-clé
-```
+Les extraits et URLs sont injectés dans le contexte du Researcher. La tâche de
+recherche est envoyée au fournisseur sélectionné. Pour désactiver cet envoi et
+conserver uniquement le RAG, définir `SEARCH_PROVIDER=none` dans `.env`.
 
-Les résultats web apparaissent automatiquement dans le contexte du Researcher. Si la clé est absente, le système fonctionne normalement sans recherche web.
+| `SEARCH_PROVIDER` | Comportement |
+|---|---|
+| `auto` (défaut) | Brave si `BRAVE_API_KEY` est renseignée, sinon Parallel |
+| `parallel` | Parallel, même si une clé Brave existe |
+| `brave` | Brave uniquement ; sans clé, aucune recherche web |
+| `none` | Recherche web désactivée |
+
+Pour utiliser Brave, obtenir une clé sur [brave.com/search/api](https://brave.com/search/api/)
+et renseigner `BRAVE_API_KEY=bsv-votre-clé` dans `.env`.
+Redémarrer le backend après modification de la configuration.
+
+Parallel peut limiter les requêtes anonymes. Un échec de recherche laisse le
+pipeline continuer avec le RAG et le LLM, sans basculer vers un autre fournisseur.
+Les appels Parallel, découverte comprise, sont limités à 15 secondes au total ;
+une annulation du workflow reste propagée. L'authentification de l'API reste
+contrôlée par `API_KEY`.
 
 ### Ajouter un nouvel outil MCP
 
 ```python
-# app/services/mcp_client.py
+# app/adapters/mcp/registry.py
 
 class GitHubSearchTool(MCPTool):
     @property
@@ -210,11 +228,11 @@ class GitHubSearchTool(MCPTool):
         # ... appel API GitHub
         return résultat
 
-# Dans setup_mcp() :
+# Dans build_mcp_registry() :
 registry.register(GitHubSearchTool())
 ```
 
-**Garanties :** un outil qui plante → log warning, pipeline continue. Clé absente → outil ignoré.
+**Garanties :** un outil qui plante → log warning, pipeline continue. Brave sans clé → outil ignoré. Aucune bascule automatique après un échec.
 
 ---
 
@@ -361,7 +379,7 @@ alembic/                  # Migrations versionnées
 | **RAG multi-sources** | Qdrant + ingestion texte, PDF, DOCX, TXT, URL avec extraction automatique |
 | **Routing LLM** | Modèle cheap (Planner/Critic/Router) vs smart (Writer/Chat) — optimisation des coûts |
 | **Sécurité** | Auth Bearer optionnelle, rate limiting slowapi, SSRF par résolution IP, inputs validés, erreurs masquées |
-| **MCP extensible** | Brave Search activé par clé API — ajouter un outil = 1 classe + 1 ligne, jamais de rupture |
+| **MCP extensible** | Parallel sans clé ou Brave configuré ; sélection explicite et désactivation possibles |
 | **Checkpointing** | LangGraph mémorise l'état par `session_id` entre les requêtes |
 | **Observabilité** | structlog dans chaque agent — modèle, durée, itérations, outils MCP utilisés |
 | **Migrations** | Alembic versionné — `make migrate` |

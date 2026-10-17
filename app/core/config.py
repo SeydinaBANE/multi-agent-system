@@ -1,5 +1,7 @@
 """Configuration centralisée chargée depuis les variables d'environnement."""
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings
 
 
@@ -9,6 +11,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str
     api_key: str | None = None          # Bearer token pour protéger l'API (optionnel en dev)
     brave_api_key: str | None = None    # optionnel — active Brave Search dans le Researcher
+    search_provider: Literal["auto", "parallel", "brave", "none"] = "auto"
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/multiagent"
     redis_url: str = "redis://localhost:6379/0"
