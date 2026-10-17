@@ -152,13 +152,20 @@ Si la DB a été initialisée par `init_db()` avant la première migration, util
 
 ### MCP — Outils externes
 
-`MCPRegistry` dans `app/services/mcp_client.py` — registre extensible d'outils appelés en parallèle dans le Researcher.
+`MCPRegistry` dans `app/adapters/mcp/registry.py` : outils exécutés en parallèle
+par `make_researcher_node`, avec injection des résultats dans le prompt.
 
-**Ajouter un outil :** créer une classe `MCPTool` + `registry.register(MonOutil())` dans `setup_mcp()`.
+**Ajouter un outil :** créer une classe `MCPTool` et l'enregistrer dans
+`build_mcp_registry()`.
 
-**Brave Search :** activé si `BRAVE_API_KEY` est renseignée dans `.env` — ignoré sinon.
+**Recherche web :** `SEARCH_PROVIDER=auto` conserve Brave si `BRAVE_API_KEY` est
+renseignée, sinon sélectionne Parallel Search MCP sans clé. Les valeurs `parallel`
+et `brave` imposent un fournisseur ; `none` désactive la recherche web.
+Parallel utilise le SDK MCP Python et Streamable HTTP, avec une limite globale de
+15 secondes. Aucun fournisseur de secours après une erreur.
 
-**Garanties :** outil absent → ignoré au démarrage. Outil qui plante → `log.warning`, pipeline continue.
+**Garanties :** Brave sans clé est ignoré. Un échec produit un warning et le
+pipeline continue ; les annulations sont propagées.
 
 ### Checkpointing
 

@@ -191,6 +191,7 @@ async def test_brave_search_run_returns_empty_when_no_web_results():
 def test_build_mcp_registry_registers_brave_when_key_present():
     with patch("app.adapters.mcp.registry.settings") as mock_settings:
         mock_settings.brave_api_key = "bsv-test-key"
+        mock_settings.search_provider = "auto"
         registry = build_mcp_registry()
         names = [t.name for t in registry.available]
         assert "brave_search" in names
@@ -199,6 +200,7 @@ def test_build_mcp_registry_registers_brave_when_key_present():
 def test_build_mcp_registry_skips_brave_when_no_key():
     with patch("app.adapters.mcp.registry.settings") as mock_settings:
         mock_settings.brave_api_key = None
+        mock_settings.search_provider = "auto"
         registry = build_mcp_registry()
         names = [t.name for t in registry.available]
         assert "brave_search" not in names
